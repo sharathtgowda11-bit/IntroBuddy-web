@@ -1,0 +1,33 @@
+{
+  "name": "@introbuddy/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --import tsx --watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "node --import tsx --import ./src/loadEnv.ts --test src/app.test.ts src/lib/tokens.test.ts src/routes/auth.e2e.test.ts"
+  },
+  "dependencies": {
+    "@introbuddy/db": "*",
+    "@introbuddy/shared": "*",
+    "@supabase/supabase-js": "^2.47.10",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "nodemailer": "^9.0.3",
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

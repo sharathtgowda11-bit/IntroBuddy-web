@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Runs the same local stack developers run, applying migrations
+      # (including tenancy_foundation.sql and auth_invitations.sql)
+      # against it.
+      - name: Start local Supabase stack
+        run: npx supabase start
+
+      - name: Typecheck
+        run: |
+          npx tsc --noEmit -p packages/db/tsconfig.json
+          npx tsc --noEmit -p packages/shared/tsconfig.json
+          npx tsc --noEmit -p apps/api/tsconfig.json
+
+      # Per spec section 6.6: must never be skipped or deleted from CI.
+      # Stays first and unmodified -- everything else builds on this
+      # guarantee holding true.
+      - name: Tenant isolation test
+        run: npm run test --workspace=@introbuddy/db
+        env:
+          SUPABASE_DB_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
+          APP_DB_URL: postgres://app_user:introbuddy_local_dev_only@127.0.0.1:54322/postgres
+
+      - name: Shared package tests
+        run: npm run test --workspace=@introbuddy/shared
+
+      # apps/api imports @introbuddy/db and @introbuddy/shared via their
+      # built dist/ output (workspace linking resolves through each
+      # package's "main" field), so both must be built before apps/api's
+      # tests can import them.
+      - name: Build workspace packages
+        run: |
+          npm run build --workspace=@introbuddy/db
+          npm run build --workspace=@introbuddy/shared
+
+      - name: Export local Supabase connection details
+        run: |
+          eval "$(npx supabase status -o env 2>/dev/null | sed 's/^/export /')"
+          echo "SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+
+      - name: API integration tests
+        run: npm run test --workspace=@introbuddy/api
+        env:
+          DATABASE_URL: postgres://app_user:introbuddy_local_dev_only@127.0.0.1:54322/postgres
+          SMTP_HOST: 127.0.0.1
+          SMTP_PORT: 54325
+          SMTP_FROM: "IntroBuddy <noreply@introbuddy.local>"
+          WEB_APP_URL: http://127.0.0.1:3000
+          # Avoids taking a real network dependency on a third-party API
+          # in CI; the check itself fails open on error regardless, so
+          # this only affects test speed/reliability, not what's tested.
+          BREACHED_PASSWORD_CHECK_ENABLED: "false"
