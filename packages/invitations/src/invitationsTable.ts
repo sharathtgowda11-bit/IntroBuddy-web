@@ -33,7 +33,9 @@ export interface CreateInvitationParams {
   tenantId: string;
   collegeUserId: string;
   tokenHash: string;
-  invitedBy: string;
+  // null only for the system bootstrap (apps/api/src/scripts/bootstrapSuperAdmin.ts),
+  // which has no human inviter -- every ordinary invitation still supplies one.
+  invitedBy: string | null;
   expiresAt: Date;
 }
 

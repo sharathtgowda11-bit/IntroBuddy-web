@@ -5,10 +5,20 @@ import {
   PasswordResetCompleteSchema,
   PasswordResetRequestSchema,
 } from "@introbuddy/shared";
+import {
+  decodeCompoundToken,
+  encodeCompoundToken,
+  findCollegeUserByEmail,
+  findCollegeUserById,
+  findCollegeUserByUsn,
+  generateRawToken,
+  hashToken,
+  markCollegeUserActive,
+  consumeInvitation,
+  findActiveInvitationByTokenHash,
+} from "@introbuddy/invitations";
 import { Router } from "express";
 import { getEnv } from "../env.js";
-import { findCollegeUserByEmail, findCollegeUserById, findCollegeUserByUsn, markCollegeUserActive } from "../db/collegeUsers.js";
-import { consumeInvitation, findActiveInvitationByTokenHash } from "../db/invitations.js";
 import {
   consumePasswordReset,
   createPasswordReset,
@@ -20,7 +30,6 @@ import { findTenantBySlug } from "../db/tenants.js";
 import { isPasswordBreached } from "../lib/breachedPassword.js";
 import { sendPasswordResetEmail } from "../lib/email.js";
 import { verifyPassword, setPassword } from "../lib/supabaseAuth.js";
-import { decodeCompoundToken, encodeCompoundToken, generateRawToken, hashToken } from "../lib/tokens.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
 export const authRouter = Router();

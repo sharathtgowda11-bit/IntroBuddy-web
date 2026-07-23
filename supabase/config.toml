@@ -117,12 +117,30 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+# College logo/banner uploads (Milestone 3). Private -- signed URLs only,
+# minted fresh on every read (apps/api/src/lib/storage.ts), never
+# persisted. Object paths: {tenantId}/logo.jpg, {tenantId}/banner.jpg.
+# Only image/jpeg: uploads are re-encoded to JPEG server-side regardless
+# of the client's original format (apps/api/src/lib/imageProcessing.ts),
+# so that's the only content type ever actually stored here. PNG/WEBP
+# input is still accepted at the API layer before re-encoding.
+[storage.buckets.college-media]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["image/jpeg"]
+
+# Raw student-import uploads (Milestone 4). Private -- only apps/api and
+# apps/worker ever read these, via the service-role client, never a
+# signed URL handed to a browser. Object paths: {tenantId}/{importJobId}.{ext}.
+# CSV or XLSX only, matching packages/import's parseImportFile -- no other
+# kind is ever parsed.
+[storage.buckets.college-imports]
+public = false
+file_size_limit = "20MiB"
+allowed_mime_types = [
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]

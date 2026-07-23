@@ -8,6 +8,7 @@ export {
   APP_URL,
   SUPERUSER_URL,
   createFixtureCollegeUser,
+  createFixtureDepartment,
   createFixtureIdentity,
   createFixtureTenant,
   fixtureExpiry,

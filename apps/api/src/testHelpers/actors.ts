@@ -1,7 +1,7 @@
 import { createFixtureCollegeUser, withTenant, type FixtureCollegeUser } from "@introbuddy/db";
+import { encodeCompoundToken, generateRawToken, hashToken } from "@introbuddy/invitations";
 import type { Client, Pool } from "pg";
 import { createSession } from "../db/sessions.js";
-import { encodeCompoundToken, generateRawToken, hashToken } from "../lib/tokens.js";
 
 export interface FixtureActor {
   collegeUserId: string;

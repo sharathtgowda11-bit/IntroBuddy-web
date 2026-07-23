@@ -1,8 +1,8 @@
 import { getPool, withTenant } from "@introbuddy/db";
 import type { Role } from "@introbuddy/shared";
 import type { NextFunction, Request, Response } from "express";
+import { decodeCompoundToken, hashToken } from "@introbuddy/invitations";
 import { findSessionByTokenHash, touchSessionLastUsed } from "../db/sessions.js";
-import { decodeCompoundToken, hashToken } from "../lib/tokens.js";
 
 export interface RequestSession {
   tenantId: string;

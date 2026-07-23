@@ -1,0 +1,24 @@
+{
+  "name": "@introbuddy/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@introbuddy/db": "*",
+    "@introbuddy/import": "*",
+    "@introbuddy/invitations": "*",
+    "@supabase/supabase-js": "^2.47.10",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

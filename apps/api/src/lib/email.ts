@@ -6,9 +6,13 @@ let transporter: Transporter | undefined;
 /**
  * Generic SMTP transport, not a specific provider's SDK -- switching from
  * local Mailpit to Resend/SES/Postmark later is an env-var change, not a
- * code change (plan decision D6). Sent synchronously inline for this
- * milestone; queuing through apps/worker's outbox pattern arrives with
- * that app's first real responsibility (bulk import, Milestone 4).
+ * code change (ADR 0005).
+ *
+ * As of Milestone 4, sendInvitationEmail lives in @introbuddy/invitations
+ * with its own, separate transporter instance -- it's the one bulk-sending
+ * actually needs (spec 10.7's throttling). Neither of the two templates
+ * remaining here has that burst-volume concern: a college gets one admin
+ * invite ever, and a password reset is one-at-a-time and user-initiated.
  */
 function getTransporter(): Transporter {
   if (!transporter) {
@@ -22,20 +26,32 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
-export interface SendInvitationEmailParams {
+export interface SendCollegeAdminInvitationEmailParams {
   to: string;
+  collegeName: string;
+  tenantSlug: string;
   activationUrl: string;
-  role: string;
 }
 
-// TODO(M4): move to email_outbox + apps/worker alongside bulk-import email.
-export async function sendInvitationEmail({ to, activationUrl, role }: SendInvitationEmailParams): Promise<void> {
+/**
+ * A separate, focused template rather than overloading
+ * sendInvitationEmail with a sometimes-used parameter. States the tenant
+ * slug explicitly: activation doesn't need it (it's embedded in the
+ * compound token), but every subsequent /auth/login call does (ADR
+ * 0002), and there's no other way for a new college admin to discover it.
+ */
+export async function sendCollegeAdminInvitationEmail({
+  to,
+  collegeName,
+  tenantSlug,
+  activationUrl,
+}: SendCollegeAdminInvitationEmailParams): Promise<void> {
   const env = getEnv();
   await getTransporter().sendMail({
     from: env.SMTP_FROM,
     to,
-    subject: "You've been invited to IntroBuddy",
-    text: `You've been invited to join IntroBuddy as a ${role}.\n\nActivate your account:\n${activationUrl}\n\nThis link works once and expires in 7 days.\n\nIf you were not expecting this email, please ignore it.`,
+    subject: `Set up ${collegeName} on IntroBuddy`,
+    text: `An IntroBuddy account has been created for ${collegeName}.\n\nTo get started, set your password and complete your college profile:\n${activationUrl}\n\nThis link works once and expires in 7 days.\n\nYour college's sign-in code is: ${tenantSlug}\nYou'll need it every time you log in, so keep it handy.\n\nIf you were not expecting this email, please ignore it.`,
   });
 }
 
@@ -44,7 +60,6 @@ export interface SendPasswordResetEmailParams {
   resetUrl: string;
 }
 
-// TODO(M4): move to email_outbox + apps/worker alongside bulk-import email.
 export async function sendPasswordResetEmail({ to, resetUrl }: SendPasswordResetEmailParams): Promise<void> {
   const env = getEnv();
   await getTransporter().sendMail({

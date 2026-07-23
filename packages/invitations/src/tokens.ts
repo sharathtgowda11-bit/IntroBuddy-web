@@ -14,15 +14,16 @@ export function hashToken(rawToken: string): string {
 }
 
 /**
- * invitations, password_resets, and sessions all carry the same FORCE RLS
- * policy as college_users -- a lookup can't run before the tenant is
- * known. So every token this app ever hands to a user (an activation
- * link, a reset link, a session credential) is compound:
- * "<tenantId>.<rawToken>". The tenant_id prefix is an untrusted routing
- * hint only, telling the server which RLS partition to query -- it grants
- * nothing by itself. The caller must still verify token_hash matches AND
- * that the row's real tenant_id equals this prefix, so a tampered or
- * mismatched prefix produces "not found," never cross-tenant access.
+ * invitations, password_resets, sessions, and (Milestone 4) jobs all
+ * carry the same FORCE RLS policy as college_users -- a lookup can't run
+ * before the tenant is known. So every token this app ever hands to a
+ * user (an activation link, a reset link, a session credential) is
+ * compound: "<tenantId>.<rawToken>". The tenant_id prefix is an
+ * untrusted routing hint only, telling the server which RLS partition to
+ * query -- it grants nothing by itself. The caller must still verify
+ * token_hash matches AND that the row's real tenant_id equals this
+ * prefix, so a tampered or mismatched prefix produces "not found," never
+ * cross-tenant access.
  */
 export function encodeCompoundToken(tenantId: string, rawToken: string): string {
   return `${tenantId}.${rawToken}`;

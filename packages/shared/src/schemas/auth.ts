@@ -5,11 +5,34 @@ const PASSWORD_MIN_LENGTH = 8;
 
 export const passwordSchema = z.string().min(PASSWORD_MIN_LENGTH);
 
-export const InvitationCreateSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(["college_admin", "student"]),
-  usn: z.string().min(1).optional(),
-});
+// departmentId only -- degreeId is always derived server-side from the
+// department (see the student_import migration's comment on
+// college_users.degree_id/department_id); a client can never supply it
+// directly.
+export const InvitationCreateSchema = z
+  .object({
+    email: z.string().email(),
+    role: z.enum(["college_admin", "student"]),
+    usn: z.string().min(1).optional(),
+    departmentId: z.string().uuid().optional(),
+    graduationYear: z.number().int().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const studentFields = { departmentId: data.departmentId, graduationYear: data.graduationYear } as const;
+    if (data.role === "student") {
+      for (const [key, value] of Object.entries(studentFields)) {
+        if (value === undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required for students` });
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(studentFields)) {
+        if (value !== undefined) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is only valid for students` });
+        }
+      }
+    }
+  });
 export type InvitationCreateInput = z.infer<typeof InvitationCreateSchema>;
 
 export const ActivateRequestSchema = z.object({

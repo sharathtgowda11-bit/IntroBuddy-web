@@ -10,3 +10,5 @@ One file per significant, hard-to-reverse decision. Each is short: context, deci
 | [0004](0004-postgres-backed-rate-limiting.md) | Rate limiting via a Postgres table instead of Redis | Accepted |
 | [0005](0005-generic-smtp-deferred-provider.md) | Outbound email via generic SMTP, provider selection deferred | Accepted |
 | [0006](0006-breached-password-check-fail-open.md) | Breached-password check via HaveIBeenPwned k-anonymity, fails open | Accepted |
+| [0007](0007-platform-tenant-for-super-admin-sessions.md) | A sentinel platform tenant anchors super_admin sessions | Accepted |
+| [0008](0008-audit-log-atomic-with-its-action.md) | The audit log is written atomically with the action it records | Accepted |

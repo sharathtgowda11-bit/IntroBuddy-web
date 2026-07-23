@@ -1,17 +1,13 @@
 import { getPool, withTenant } from "@introbuddy/db";
+import { encodeCompoundToken, provisionInvitationInTransaction, sendInvitationEmail } from "@introbuddy/invitations";
+import { getGraduationYearBounds } from "@introbuddy/import";
 import { hasPermission, INVITE_TARGET_PERMISSION, InvitationCreateSchema } from "@introbuddy/shared";
 import { Router } from "express";
-import { createCollegeUser, findCollegeUserByEmail } from "../db/collegeUsers.js";
-import { createInvitation, revokeOpenInvitationsForCollegeUser } from "../db/invitations.js";
 import { getEnv } from "../env.js";
-import { sendInvitationEmail } from "../lib/email.js";
-import { createIdentity } from "../lib/supabaseAuth.js";
-import { encodeCompoundToken, generateRawToken, hashToken } from "../lib/tokens.js";
+import { findDepartmentById } from "../db/departments.js";
 import { resolveSession } from "../middleware/resolveSession.js";
 
 export const invitationsRouter = Router();
-
-const INVITATION_EXPIRY_DAYS = 7; // spec 10.5
 
 invitationsRouter.post("/", resolveSession(), async (req, res) => {
   const parsed = InvitationCreateSchema.safeParse(req.body);
@@ -19,7 +15,7 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
     res.status(400).json({ error: "invalid request", details: parsed.error.flatten() });
     return;
   }
-  const { email, role, usn } = parsed.data;
+  const { email, role, usn, departmentId, graduationYear } = parsed.data;
   const session = req.session;
   if (!session) {
     res.status(401).json({ error: "unauthorized" });
@@ -35,52 +31,57 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
     return;
   }
 
+  // Schema already guarantees these are present together for a student
+  // and absent otherwise (InvitationCreateSchema's superRefine).
+  if (role === "student" && graduationYear !== undefined) {
+    const { minYear, maxYear } = getGraduationYearBounds(new Date().getFullYear());
+    if (graduationYear < minYear || graduationYear > maxYear) {
+      res.status(400).json({ error: `graduation year out of plausible range (${minYear}-${maxYear})` });
+      return;
+    }
+  }
+
   const pool = getPool();
   const env = getEnv();
-  const rawToken = generateRawToken();
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
   try {
     const result = await withTenant(pool, session.tenantId, async (client) => {
-      const existing = await findCollegeUserByEmail(client, email);
-
-      if (existing && existing.status === "active") {
-        return { conflict: true as const };
+      let degreeId: string | undefined;
+      if (role === "student" && departmentId !== undefined) {
+        // RLS scopes this lookup to the caller's own tenant, so a
+        // cross-tenant departmentId is indistinguishable from a
+        // nonexistent one -- no data leak, just "invalid department".
+        const department = await findDepartmentById(client, departmentId);
+        if (!department) {
+          return { invalidDepartment: true as const };
+        }
+        degreeId = department.degreeId;
       }
 
-      let collegeUserId: string;
-      if (existing) {
-        collegeUserId = existing.id;
-        await revokeOpenInvitationsForCollegeUser(client, collegeUserId);
-      } else {
-        const userId = await createIdentity(email);
-        collegeUserId = await createCollegeUser(client, {
-          tenantId: session.tenantId,
-          userId,
-          email,
-          usn,
-          role,
-        });
-      }
-
-      await createInvitation(client, {
+      const provisioned = await provisionInvitationInTransaction(pool, client, {
         tenantId: session.tenantId,
-        collegeUserId,
-        tokenHash,
-        invitedBy: session.collegeUserId,
-        expiresAt,
+        email,
+        role,
+        usn,
+        degreeId,
+        departmentId,
+        graduationYear,
+        invitedByCollegeUserId: session.collegeUserId,
       });
-
-      return { conflict: false as const };
+      return { invalidDepartment: false as const, provisioned };
     });
 
-    if (result.conflict) {
+    if (result.invalidDepartment) {
+      res.status(400).json({ error: "department not found in this college's hierarchy" });
+      return;
+    }
+
+    if (result.provisioned.conflict) {
       res.status(409).json({ error: "an active account already exists for this email" });
       return;
     }
 
-    const activationUrl = `${env.WEB_APP_URL}/activate?token=${encodeCompoundToken(session.tenantId, rawToken)}`;
+    const activationUrl = `${env.WEB_APP_URL}/activate?token=${encodeCompoundToken(session.tenantId, result.provisioned.rawToken)}`;
     await sendInvitationEmail({ to: email, activationUrl, role });
 
     res.status(201).json({ status: "invited" });

@@ -59,6 +59,25 @@ export async function createFixtureCollegeUser(
   return { collegeUserId: result.rows[0].id, userId, email };
 }
 
+/** A fixture degree + department pair -- for tests that invite/import a student, which now require a real departmentId. */
+export async function createFixtureDepartment(
+  superuser: Client,
+  tenantId: string,
+): Promise<{ degreeId: string; departmentId: string; name: string }> {
+  const suffix = uniqueSuffix();
+  const name = `Fixture Department ${suffix}`;
+  const degreeResult = await superuser.query<{ id: string }>(
+    `insert into public.degrees (tenant_id, name) values ($1, $2) returning id`,
+    [tenantId, `Fixture Degree ${suffix}`],
+  );
+  const degreeId = degreeResult.rows[0].id;
+  const departmentResult = await superuser.query<{ id: string }>(
+    `insert into public.departments (tenant_id, degree_id, name) values ($1, $2, $3) returning id`,
+    [tenantId, degreeId, name],
+  );
+  return { degreeId, departmentId: departmentResult.rows[0].id, name };
+}
+
 /** A fixture-only stand-in for a real hashed token; the real hashing lives in apps/api's token utilities. */
 export function fixtureTokenHash(): string {
   return randomBytes(32).toString("hex");

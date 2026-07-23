@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APP_URL, createFixtureTenant, SUPERUSER_URL, uniqueSuffix } from "@introbuddy/db";
+import { APP_URL, createFixtureDepartment, createFixtureTenant, SUPERUSER_URL, uniqueSuffix } from "@introbuddy/db";
+import { createIdentity, encodeCompoundToken, generateRawToken } from "@introbuddy/invitations";
 import { Client, Pool } from "pg";
 import request from "supertest";
 import { createApp } from "../app.js";
-import { createIdentity, setPassword } from "../lib/supabaseAuth.js";
-import { encodeCompoundToken, generateRawToken } from "../lib/tokens.js";
+import { setPassword } from "../lib/supabaseAuth.js";
 import { createFixtureActor } from "../testHelpers/actors.js";
 import { clearMailpit, extractTokenFromEmail, waitForEmailTo } from "../testHelpers/mailpit.js";
 
@@ -25,7 +25,10 @@ interface Ctx {
   tenantId: string;
   tenantSlug: string;
   senderAuthHeader: string;
+  departmentId: string;
 }
+
+const GRADUATION_YEAR = new Date().getFullYear() + 1;
 
 async function setUp(): Promise<Ctx> {
   const superuser = new Client({ connectionString: SUPERUSER_URL });
@@ -39,8 +42,9 @@ async function setUp(): Promise<Ctx> {
 
   const { id: tenantId, slug: tenantSlug } = await createFixtureTenant(superuser, `E2E Tenant ${uniqueSuffix()}`);
   const sender = await createFixtureActor(superuser, pool, tenantId, { role: "college_admin" });
+  const { departmentId } = await createFixtureDepartment(superuser, tenantId);
 
-  return { superuser, pool, tenantId, tenantSlug, senderAuthHeader: sender.authHeader };
+  return { superuser, pool, tenantId, tenantSlug, senderAuthHeader: sender.authHeader, departmentId };
 }
 
 async function tearDown(ctx: Ctx): Promise<void> {
@@ -57,7 +61,13 @@ test("full invite -> activate -> login -> reset happy path, including old-sessio
     const inviteResponse = await request(app)
       .post("/invitations")
       .set("Authorization", ctx.senderAuthHeader)
-      .send({ email: studentEmail, role: "student", usn: `USN-${uniqueSuffix()}` });
+      .send({
+        email: studentEmail,
+        role: "student",
+        usn: `USN-${uniqueSuffix()}`,
+        departmentId: ctx.departmentId,
+        graduationYear: GRADUATION_YEAR,
+      });
     assert.equal(inviteResponse.status, 201);
 
     const activationEmail = await waitForEmailTo(studentEmail);
@@ -78,7 +88,12 @@ test("full invite -> activate -> login -> reset happy path, including old-sessio
     const authorizedButForbidden = await request(app)
       .post("/invitations")
       .set("Authorization", `Bearer ${firstSessionToken}`)
-      .send({ email: `other-${uniqueSuffix()}@example.com`, role: "student" });
+      .send({
+        email: `other-${uniqueSuffix()}@example.com`,
+        role: "student",
+        departmentId: ctx.departmentId,
+        graduationYear: GRADUATION_YEAR,
+      });
     assert.equal(authorizedButForbidden.status, 403);
 
     await clearMailpit();
@@ -118,10 +133,11 @@ test("activation rejects a token that has already been consumed", async () => {
     const studentEmail = `student-${uniqueSuffix()}@example.com`;
     await clearMailpit();
 
-    await request(app)
+    const inviteResponse = await request(app)
       .post("/invitations")
       .set("Authorization", ctx.senderAuthHeader)
-      .send({ email: studentEmail, role: "student" });
+      .send({ email: studentEmail, role: "student", departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
+    assert.equal(inviteResponse.status, 201);
 
     const token = extractTokenFromEmail(await waitForEmailTo(studentEmail));
 
@@ -141,17 +157,18 @@ test("reissuing an invitation invalidates the previous token", async () => {
     const studentEmail = `student-${uniqueSuffix()}@example.com`;
 
     await clearMailpit();
-    await request(app)
+    const firstInviteResponse = await request(app)
       .post("/invitations")
       .set("Authorization", ctx.senderAuthHeader)
-      .send({ email: studentEmail, role: "student" });
+      .send({ email: studentEmail, role: "student", departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
+    assert.equal(firstInviteResponse.status, 201);
     const firstToken = extractTokenFromEmail(await waitForEmailTo(studentEmail));
 
     await clearMailpit();
     const reissueResponse = await request(app)
       .post("/invitations")
       .set("Authorization", ctx.senderAuthHeader)
-      .send({ email: studentEmail, role: "student" });
+      .send({ email: studentEmail, role: "student", departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
     assert.equal(reissueResponse.status, 201);
     const secondToken = extractTokenFromEmail(await waitForEmailTo(studentEmail));
 
@@ -173,7 +190,7 @@ test("login gives an identical response for an unknown identifier and a wrong pa
     // raw-SQL fixture shortcut used elsewhere, which only satisfies
     // college_users' FK and isn't a fully valid GoTrue user row.
     const email = `student-${uniqueSuffix()}@example.com`;
-    const userId = await createIdentity(email);
+    const userId = await createIdentity(ctx.pool, email);
     await ctx.superuser.query(
       `insert into public.college_users (tenant_id, user_id, email, role, status) values ($1, $2, $3, 'student', 'active')`,
       [ctx.tenantId, userId, email],
@@ -211,6 +228,94 @@ test("a session token minted under one tenant cannot authenticate against anothe
       .send({ email: `nope-${uniqueSuffix()}@example.com`, role: "student" });
 
     assert.equal(response.status, 401);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("single-student add derives degree_id from departmentId server-side", async () => {
+  const ctx = await setUp();
+  try {
+    const studentEmail = `student-${uniqueSuffix()}@example.com`;
+
+    const response = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({ email: studentEmail, role: "student", departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
+    assert.equal(response.status, 201);
+
+    const { rows } = await ctx.superuser.query<{
+      department_id: string;
+      degree_id: string;
+      graduation_year: number;
+    }>(
+      `select department_id, degree_id, graduation_year from public.college_users where email = $1`,
+      [studentEmail],
+    );
+    assert.equal(rows[0].department_id, ctx.departmentId);
+    assert.equal(rows[0].graduation_year, GRADUATION_YEAR);
+    // degree_id was never sent by the client -- proof it was derived from departmentId, not accepted directly.
+    assert.ok(rows[0].degree_id);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("single-student add rejects a departmentId belonging to a different tenant", async () => {
+  const ctx = await setUp();
+  try {
+    const { id: otherTenantId } = await createFixtureTenant(ctx.superuser, `E2E Other Tenant ${uniqueSuffix()}`);
+    const { departmentId: foreignDepartmentId } = await createFixtureDepartment(ctx.superuser, otherTenantId);
+
+    const response = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({
+        email: `student-${uniqueSuffix()}@example.com`,
+        role: "student",
+        departmentId: foreignDepartmentId,
+        graduationYear: GRADUATION_YEAR,
+      });
+
+    assert.equal(response.status, 400);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("single-student add rejects a graduation year outside the plausible range", async () => {
+  const ctx = await setUp();
+  try {
+    const response = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({
+        email: `student-${uniqueSuffix()}@example.com`,
+        role: "student",
+        departmentId: ctx.departmentId,
+        graduationYear: new Date().getFullYear() + 50,
+      });
+
+    assert.equal(response.status, 400);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("inviting a college_admin rejects departmentId/graduationYear as forbidden fields", async () => {
+  const ctx = await setUp();
+  try {
+    const response = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({
+        email: `admin-${uniqueSuffix()}@example.com`,
+        role: "college_admin",
+        departmentId: ctx.departmentId,
+        graduationYear: GRADUATION_YEAR,
+      });
+
+    assert.equal(response.status, 400);
   } finally {
     await tearDown(ctx);
   }

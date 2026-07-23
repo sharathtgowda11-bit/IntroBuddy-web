@@ -1,6 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getEnv } from "../env.js";
-import { generateRawToken } from "./tokens.js";
 
 let anonClient: SupabaseClient | undefined;
 let adminClient: SupabaseClient | undefined;
@@ -14,33 +13,24 @@ function getAnonClient(): SupabaseClient {
   return anonClient;
 }
 
-/** Used only for identity provisioning via the Admin API -- never to query public tables (that's always app_user + withTenant). */
-function getAdminClient(): SupabaseClient {
+/**
+ * Used only for setPassword/verifyPassword below and (as of Milestone 3)
+ * Storage access -- never to query public tables (that's always app_user
+ * + withTenant). Exported so apps/api/src/lib/storage.ts can reuse the
+ * same service-role client rather than minting a second one for the same
+ * credential.
+ *
+ * As of Milestone 4, identity *provisioning* (createIdentity) lives in
+ * @introbuddy/invitations with its own, separate admin-client instance --
+ * a small, deliberate duplication rather than forcing this file's
+ * zod-validated env.ts dependency into a package with no app of its own.
+ */
+export function getAdminClient(): SupabaseClient {
   if (!adminClient) {
     const env = getEnv();
     adminClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
   }
   return adminClient;
-}
-
-/**
- * Provisions a real GoTrue identity with a throwaway, never-revealed
- * password -- the person sets their own real password later via our own
- * activation flow, never GoTrue's built-in invite/confirm emails.
- * email_confirm marks it pre-confirmed so GoTrue doesn't send anything of
- * its own.
- */
-export async function createIdentity(email: string): Promise<string> {
-  const admin = getAdminClient();
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password: generateRawToken(),
-    email_confirm: true,
-  });
-  if (error || !data.user) {
-    throw new Error(`failed to provision identity: ${error?.message ?? "unknown error"}`);
-  }
-  return data.user.id;
 }
 
 export async function setPassword(userId: string, password: string): Promise<void> {
