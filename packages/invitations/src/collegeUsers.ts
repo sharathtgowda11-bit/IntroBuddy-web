@@ -178,6 +178,9 @@ export interface PendingInvitationCandidate {
   collegeUserId: string;
   email: string;
   name: string | null;
+  usn: string | null;
+  departmentName: string | null;
+  graduationYear: number | null;
 }
 
 /**
@@ -187,15 +190,27 @@ export interface PendingInvitationCandidate {
  * because a previous chunk minted one and the email actually sent, see
  * apps/worker's own single-transaction mint+send -- is automatically
  * excluded, with no separate offset/cursor bookkeeping required.
+ *
+ * usn/departmentName/graduationYear are included so the worker can send
+ * the personalized invitation template (spec's Message 2) rather than
+ * the generic fallback.
  */
 export async function listPendingInvitationCandidates(
   client: PoolClient,
   importJobId: string,
   limit: number,
 ): Promise<PendingInvitationCandidate[]> {
-  const result = await client.query<{ id: string; email: string; name: string | null }>(
-    `select cu.id, cu.email, cu.name
+  const result = await client.query<{
+    id: string;
+    email: string;
+    name: string | null;
+    usn: string | null;
+    department_name: string | null;
+    graduation_year: number | null;
+  }>(
+    `select cu.id, cu.email, cu.name, cu.usn, cu.graduation_year, dept.name as department_name
      from public.college_users cu
+     left join public.departments dept on dept.id = cu.department_id
      where cu.source_import_job_id = $1
        and cu.status = 'invited'
        and not exists (
@@ -209,5 +224,12 @@ export async function listPendingInvitationCandidates(
      limit $2`,
     [importJobId, limit],
   );
-  return result.rows.map((row) => ({ collegeUserId: row.id, email: row.email, name: row.name }));
+  return result.rows.map((row) => ({
+    collegeUserId: row.id,
+    email: row.email,
+    name: row.name,
+    usn: row.usn,
+    departmentName: row.department_name,
+    graduationYear: row.graduation_year,
+  }));
 }

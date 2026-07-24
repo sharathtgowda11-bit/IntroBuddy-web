@@ -73,7 +73,9 @@ test("full invite -> activate -> login -> reset happy path, including old-sessio
     const activationEmail = await waitForEmailTo(studentEmail);
     const activationToken = extractTokenFromEmail(activationEmail);
 
-    const activateResponse = await request(app).post("/auth/activate").send({ token: activationToken, password: PASSWORD });
+    const activateResponse = await request(app)
+      .post("/auth/activate")
+      .send({ token: activationToken, password: PASSWORD, consentAccepted: true });
     assert.equal(activateResponse.status, 200);
 
     const loginResponse = await request(app)
@@ -141,10 +143,14 @@ test("activation rejects a token that has already been consumed", async () => {
 
     const token = extractTokenFromEmail(await waitForEmailTo(studentEmail));
 
-    const first = await request(app).post("/auth/activate").send({ token, password: PASSWORD });
+    const first = await request(app)
+      .post("/auth/activate")
+      .send({ token, password: PASSWORD, consentAccepted: true });
     assert.equal(first.status, 200);
 
-    const second = await request(app).post("/auth/activate").send({ token, password: PASSWORD });
+    const second = await request(app)
+      .post("/auth/activate")
+      .send({ token, password: PASSWORD, consentAccepted: true });
     assert.equal(second.status, 400);
   } finally {
     await tearDown(ctx);
@@ -172,11 +178,108 @@ test("reissuing an invitation invalidates the previous token", async () => {
     assert.equal(reissueResponse.status, 201);
     const secondToken = extractTokenFromEmail(await waitForEmailTo(studentEmail));
 
-    const activateWithOldToken = await request(app).post("/auth/activate").send({ token: firstToken, password: PASSWORD });
+    const activateWithOldToken = await request(app)
+      .post("/auth/activate")
+      .send({ token: firstToken, password: PASSWORD, consentAccepted: true });
     assert.equal(activateWithOldToken.status, 400);
 
-    const activateWithNewToken = await request(app).post("/auth/activate").send({ token: secondToken, password: PASSWORD });
+    const activateWithNewToken = await request(app)
+      .post("/auth/activate")
+      .send({ token: secondToken, password: PASSWORD, consentAccepted: true });
     assert.equal(activateWithNewToken.status, 200);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("student activation without consent is rejected, and the token stays valid for a retry with consent", async () => {
+  const ctx = await setUp();
+  try {
+    const studentEmail = `student-${uniqueSuffix()}@example.com`;
+    await clearMailpit();
+
+    const inviteResponse = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({ email: studentEmail, role: "student", departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
+    assert.equal(inviteResponse.status, 201);
+
+    const token = extractTokenFromEmail(await waitForEmailTo(studentEmail));
+
+    const withoutConsent = await request(app).post("/auth/activate").send({ token, password: PASSWORD });
+    assert.equal(withoutConsent.status, 400);
+
+    // The failed attempt must not have consumed the single-use token.
+    await clearMailpit();
+    const withConsent = await request(app)
+      .post("/auth/activate")
+      .send({ token, password: PASSWORD, consentAccepted: true });
+    assert.equal(withConsent.status, 200);
+
+    const { rows } = await ctx.superuser.query(
+      `select c.policy_version from public.consents c
+       join public.college_users cu on cu.id = c.college_user_id
+       where cu.email = $1`,
+      [studentEmail],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].policy_version, "1.0");
+
+    // Message 5 -- sent once, right after the student's own activation.
+    const confirmedEmail = await waitForEmailTo(studentEmail);
+    assert.match(confirmedEmail, /profile/i);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("college_admin activation is unaffected by the student consent requirement", async () => {
+  const ctx = await setUp();
+  try {
+    const adminEmail = `second-admin-${uniqueSuffix()}@example.com`;
+    await clearMailpit();
+
+    const inviteResponse = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({ email: adminEmail, role: "college_admin" });
+    assert.equal(inviteResponse.status, 201);
+
+    const token = extractTokenFromEmail(await waitForEmailTo(adminEmail));
+
+    const activateResponse = await request(app).post("/auth/activate").send({ token, password: PASSWORD });
+    assert.equal(activateResponse.status, 200);
+
+    const { rows } = await ctx.superuser.query(
+      `select c.id from public.consents c
+       join public.college_users cu on cu.id = c.college_user_id
+       where cu.email = $1`,
+      [adminEmail],
+    );
+    assert.equal(rows.length, 0);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("student invitation email is personalized with USN, department, and batch", async () => {
+  const ctx = await setUp();
+  try {
+    const studentEmail = `student-${uniqueSuffix()}@example.com`;
+    const usn = `USN-${uniqueSuffix()}`;
+    await clearMailpit();
+
+    const inviteResponse = await request(app)
+      .post("/invitations")
+      .set("Authorization", ctx.senderAuthHeader)
+      .send({ email: studentEmail, role: "student", usn, departmentId: ctx.departmentId, graduationYear: GRADUATION_YEAR });
+    assert.equal(inviteResponse.status, 201);
+
+    const emailBody = await waitForEmailTo(studentEmail);
+    assert.match(emailBody, new RegExp(usn));
+    assert.match(emailBody, new RegExp(String(GRADUATION_YEAR)));
+    assert.match(emailBody, /USN:/);
+    assert.match(emailBody, /Batch:/);
   } finally {
     await tearDown(ctx);
   }

@@ -6,6 +6,7 @@ import { departmentsRouter } from "./routes/departments.js";
 import { healthRouter } from "./routes/health.js";
 import { importJobsRouter } from "./routes/importJobs.js";
 import { invitationsRouter } from "./routes/invitations.js";
+import { meRouter } from "./routes/me.js";
 
 export function createApp(): Express {
   const app = express();
@@ -17,5 +18,6 @@ export function createApp(): Express {
   app.use("/degrees", degreesRouter);
   app.use("/departments", departmentsRouter);
   app.use("/import-jobs", importJobsRouter);
+  app.use("/me", meRouter);
   return app;
 }

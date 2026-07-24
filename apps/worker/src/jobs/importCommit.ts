@@ -16,7 +16,13 @@ import {
   setImportJobPhase,
   type JobRecord,
 } from "@introbuddy/jobs";
-import { findCollegeUserByUsn, resolveCollegeUserForInvite, updateCollegeUserAcademicFields } from "@introbuddy/invitations";
+import {
+  findCollegeUserById,
+  findCollegeUserByUsn,
+  resolveCollegeUserForInvite,
+  sendImportSummaryEmail,
+  updateCollegeUserAcademicFields,
+} from "@introbuddy/invitations";
 import type { Pool } from "pg";
 import { getEnv } from "../env.js";
 
@@ -52,15 +58,25 @@ export async function processImportCommit(pool: Pool, job: JobRecord): Promise<v
     const { rows } = await parseImportFile(buffer, kind);
     const mappedRows = toMappedStudentRows(rows, importJob.columnMapping);
 
-    const actionable = await withTenant(pool, job.tenantId, async (client) => {
+    const { actionable, createCount, updateCount, errorCount } = await withTenant(pool, job.tenantId, async (client) => {
       const context = await buildValidationContext(client);
-      return validateImportRows(mappedRows, context).filter(isActionable);
+      const outcomes = validateImportRows(mappedRows, context);
+      const actionable = outcomes.filter(isActionable);
+      return {
+        actionable,
+        createCount: actionable.filter((outcome) => outcome.outcome === "create").length,
+        updateCount: actionable.filter((outcome) => outcome.outcome === "update").length,
+        errorCount: outcomes.length - actionable.length,
+      };
     });
 
     const offset = typeof job.payload.offset === "number" ? job.payload.offset : 0;
     const chunk = actionable.slice(offset, offset + env.IMPORT_COMMIT_CHUNK_SIZE);
 
-    await withTenant(pool, job.tenantId, async (client) => {
+    // Only set once the final chunk completes, and only sent (below,
+    // outside this transaction) if it's non-null -- the notification
+    // email failing must never roll back an already-committed import.
+    const summaryRecipient = await withTenant(pool, job.tenantId, async (client) => {
       // Unconditional, not just on the first chunk -- a retry that
       // resumes after an earlier failed attempt (which set 'failed')
       // must move the phase back to 'committing' too.
@@ -95,11 +111,39 @@ export async function processImportCommit(pool: Pool, job: JobRecord): Promise<v
       const nextOffset = offset + chunk.length;
       if (nextOffset < actionable.length) {
         await rescheduleJob(client, job.id, new Date(), { importJobId, offset: nextOffset });
-      } else {
-        await setImportJobPhase(client, importJobId, "committed", { committedRowCount: actionable.length });
-        await completeJob(client, job.id, { status: "succeeded" });
+        return null;
       }
+
+      await setImportJobPhase(client, importJobId, "committed", { committedRowCount: actionable.length });
+      await completeJob(client, job.id, { status: "succeeded" });
+
+      const admin = await findCollegeUserById(client, importJob.createdByCollegeUserId);
+      if (!admin) {
+        return null;
+      }
+      const tenantResult = await client.query<{ name: string }>(`select name from public.tenants where id = $1`, [
+        job.tenantId,
+      ]);
+      return {
+        to: admin.email,
+        adminFirstName: admin.name?.split(" ")[0] || "there",
+        collegeName: tenantResult.rows[0]?.name ?? "your college",
+      };
     });
+
+    if (summaryRecipient) {
+      await sendImportSummaryEmail({
+        to: summaryRecipient.to,
+        adminFirstName: summaryRecipient.adminFirstName,
+        collegeName: summaryRecipient.collegeName,
+        fileName: importJob.originalFilename,
+        createdCount: createCount,
+        updatedCount: updateCount,
+        errorCount,
+        errorReportUrl: `${env.WEB_APP_URL}/import-jobs/${importJobId}/errors`,
+        reviewUrl: `${env.WEB_APP_URL}/import-jobs/${importJobId}`,
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await withTenant(pool, job.tenantId, (client) =>

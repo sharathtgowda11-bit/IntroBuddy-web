@@ -142,6 +142,16 @@ allowed_mime_types = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]
 
+# Student profile pictures and resumes (Milestone 5). Private -- signed
+# URLs only, same pattern as college-media. Object paths:
+# {tenantId}/{collegeUserId}/avatar.jpg, {tenantId}/{collegeUserId}/resume.pdf.
+# Avatars are always re-encoded to JPEG server-side (apps/api/src/lib/imageProcessing.ts)
+# before upload, same EXIF-stripping pipeline as college logo/banner.
+[storage.buckets.student-media]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["image/jpeg", "application/pdf"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

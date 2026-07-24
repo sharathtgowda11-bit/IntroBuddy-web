@@ -40,3 +40,11 @@ export {
   type ImportMappingUpdateInput,
   type ImportSendInvitationsInput,
 } from "./schemas/imports.js";
+export {
+  StudentProfileUpdateSchema,
+  CertificationCreateSchema,
+  CertificationUpdateSchema,
+  type StudentProfileUpdateInput,
+  type CertificationCreateInput,
+  type CertificationUpdateInput,
+} from "./schemas/profile.js";

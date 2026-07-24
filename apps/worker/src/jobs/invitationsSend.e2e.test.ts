@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   APP_URL,
   createFixtureCollegeUser,
+  createFixtureDepartment,
   createFixtureTenant,
   SUPERUSER_URL,
   uniqueSuffix,
@@ -14,12 +15,16 @@ import { Client, Pool } from "pg";
 import { clearMailpit, waitForEmailTo } from "../testHelpers/mailpit.js";
 import { processInvitationsSend } from "./invitationsSend.js";
 
+const GRADUATION_YEAR = new Date().getFullYear() + 1;
+
 interface Ctx {
   superuser: Client;
   pool: Pool;
   tenantId: string;
   senderCollegeUserId: string;
   importJobId: string;
+  departmentId: string;
+  departmentName: string;
 }
 
 /** A minimal fixture import_jobs row -- college_users.source_import_job_id has a real FK to it, so one must exist even though this file never parses an actual upload. */
@@ -41,6 +46,7 @@ async function setUp(): Promise<Ctx> {
     role: "college_admin",
     status: "active",
   });
+  const { departmentId, name: departmentName } = await createFixtureDepartment(superuser, tenantId);
 
   const importJobId = randomUUID();
   const buffer = Buffer.from("Name,USN,Email,Department,Graduation Year\n", "utf-8");
@@ -57,7 +63,7 @@ async function setUp(): Promise<Ctx> {
     }),
   );
 
-  return { superuser, pool, tenantId, senderCollegeUserId, importJobId };
+  return { superuser, pool, tenantId, senderCollegeUserId, importJobId, departmentId, departmentName };
 }
 
 async function tearDown(ctx: Ctx): Promise<void> {
@@ -65,7 +71,11 @@ async function tearDown(ctx: Ctx): Promise<void> {
   await ctx.superuser.end();
 }
 
-async function createFixtureImportedStudent(ctx: Ctx, email: string): Promise<string> {
+async function createFixtureImportedStudent(
+  ctx: Ctx,
+  email: string,
+  params: { name?: string; usn?: string } = {},
+): Promise<string> {
   const { rows } = await ctx.superuser.query<{ id: string }>(
     `insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, created_at, updated_at)
      values ('00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated', $1, now(), now(), now())
@@ -74,10 +84,11 @@ async function createFixtureImportedStudent(ctx: Ctx, email: string): Promise<st
   );
   const userId = rows[0].id;
   const collegeUserResult = await ctx.superuser.query<{ id: string }>(
-    `insert into public.college_users (tenant_id, user_id, email, role, status, source_import_job_id)
-     values ($1, $2, $3, 'student', 'invited', $4)
+    `insert into public.college_users
+       (tenant_id, user_id, email, name, usn, role, status, department_id, graduation_year, source_import_job_id)
+     values ($1, $2, $3, $4, $5, 'student', 'invited', $6, $7, $8)
      returning id`,
-    [ctx.tenantId, userId, email, ctx.importJobId],
+    [ctx.tenantId, userId, email, params.name ?? null, params.usn ?? null, ctx.departmentId, GRADUATION_YEAR, ctx.importJobId],
   );
   return collegeUserResult.rows[0].id;
 }
@@ -103,8 +114,9 @@ test("sends an invitation email to each pending student from the import", async 
     const suffix = uniqueSuffix();
     const emailA = `student-a-${suffix}@example.com`;
     const emailB = `student-b-${suffix}@example.com`;
-    await createFixtureImportedStudent(ctx, emailA);
-    await createFixtureImportedStudent(ctx, emailB);
+    const usnA = `USN-${suffix}-A`;
+    await createFixtureImportedStudent(ctx, emailA, { name: "Alice Alpha", usn: usnA });
+    await createFixtureImportedStudent(ctx, emailB, { name: "Bob Beta", usn: `USN-${suffix}-B` });
 
     await clearMailpit();
     await runSend(ctx);
@@ -113,6 +125,12 @@ test("sends an invitation email to each pending student from the import", async 
     const bodyB = await waitForEmailTo(emailB);
     assert.match(bodyA, /activate/);
     assert.match(bodyB, /activate/);
+
+    // Spec's Message 2, personalized -- the student's own USN and
+    // department, not the generic fallback template.
+    assert.match(bodyA, new RegExp(usnA));
+    assert.match(bodyA, new RegExp(ctx.departmentName));
+    assert.match(bodyA, new RegExp(String(GRADUATION_YEAR)));
 
     const { rows } = await ctx.superuser.query(
       `select count(*) from public.invitations where tenant_id = $1 and revoked_at is null and consumed_at is null`,

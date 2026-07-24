@@ -69,3 +69,36 @@ export async function sendPasswordResetEmail({ to, resetUrl }: SendPasswordReset
     text: `We received a request to reset your IntroBuddy password.\n\nReset your password:\n${resetUrl}\n\nThis link expires in 1 hour and can be used once.\n\nIf you did not request this, you can safely ignore this email. Your password has not changed.`,
   });
 }
+
+export interface SendStudentActivationConfirmedEmailParams {
+  to: string;
+  firstName: string;
+  collegeName: string;
+  profileUrl: string;
+  collegeAdminEmail: string | null;
+}
+
+/**
+ * Spec's Message 5 -- sent once, right after a student's own activation
+ * (setPassword) succeeds, never for college_admin/super_admin. This is a
+ * security message as much as a welcome: the final paragraph is how a
+ * student would learn their account had been taken over by someone else.
+ */
+export async function sendStudentActivationConfirmedEmail({
+  to,
+  firstName,
+  collegeName,
+  profileUrl,
+  collegeAdminEmail,
+}: SendStudentActivationConfirmedEmailParams): Promise<void> {
+  const env = getEnv();
+  const contactLine = collegeAdminEmail
+    ? `If you did not set this password, contact your placement office immediately at ${collegeAdminEmail}.`
+    : "If you did not set this password, contact your placement office immediately.";
+  await getTransporter().sendMail({
+    from: env.SMTP_FROM,
+    to,
+    subject: `Your ${collegeName} account is active`,
+    text: `Hi ${firstName},\n\nYour IntroBuddy account is now active.\n\nNext step: complete your profile. You will need a profile photo and your LinkedIn URL - these are required before you can connect with alumni.\n\n${profileUrl}\n\n${contactLine}`,
+  });
+}

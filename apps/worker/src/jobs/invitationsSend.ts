@@ -21,7 +21,16 @@ export async function processInvitationsSend(pool: Pool, job: JobRecord): Promis
   const importJobId = job.payload.importJobId as string;
   const env = getEnv();
 
-  const importJob = await withTenant(pool, job.tenantId, (client) => findImportJobById(client, importJobId));
+  const { importJob, collegeName } = await withTenant(pool, job.tenantId, async (client) => {
+    const importJob = await findImportJobById(client, importJobId);
+    // One inline query rather than a new shared helper for a single
+    // SELECT -- same "small deliberate duplication" reasoning already
+    // used elsewhere in this file (see the mint+send transaction below).
+    const tenantResult = await client.query<{ name: string }>(`select name from public.tenants where id = $1`, [
+      job.tenantId,
+    ]);
+    return { importJob, collegeName: tenantResult.rows[0]?.name };
+  });
   if (!importJob) {
     throw new Error(`invitations.send job references missing import job ${importJobId}`);
   }
@@ -48,7 +57,18 @@ export async function processInvitationsSend(pool: Pool, job: JobRecord): Promis
         invitedByCollegeUserId: importJob.createdByCollegeUserId,
       });
       const activationUrl = `${env.WEB_APP_URL}/activate?token=${encodeCompoundToken(job.tenantId, rawToken)}`;
-      await sendInvitationEmail({ to: candidate.email, activationUrl, role: "student" });
+      await sendInvitationEmail({
+        to: candidate.email,
+        activationUrl,
+        role: "student",
+        collegeName,
+        student: {
+          name: candidate.name,
+          usn: candidate.usn,
+          departmentName: candidate.departmentName,
+          graduationYear: candidate.graduationYear,
+        },
+      });
     });
   }
 

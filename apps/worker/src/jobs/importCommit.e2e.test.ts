@@ -12,6 +12,7 @@ import {
 } from "@introbuddy/db";
 import { claimNextJob, createImportJob, enqueueJob, findImportJobById, uploadImportFile } from "@introbuddy/jobs";
 import { Client, Pool } from "pg";
+import { clearMailpit, waitForEmailTo } from "../testHelpers/mailpit.js";
 import { processImportCommit } from "./importCommit.js";
 
 const GRADUATION_YEAR = new Date().getFullYear() + 1;
@@ -21,6 +22,7 @@ interface Ctx {
   pool: Pool;
   tenantId: string;
   senderCollegeUserId: string;
+  senderEmail: string;
   departmentId: string;
   departmentName: string;
 }
@@ -40,14 +42,14 @@ async function setUp(): Promise<Ctx> {
   await superuser.query("delete from public.jobs where status = 'queued'");
 
   const { id: tenantId } = await createFixtureTenant(superuser, `Worker Commit E2E Tenant ${uniqueSuffix()}`);
-  const { collegeUserId: senderCollegeUserId } = await createFixtureCollegeUser(superuser, {
+  const { collegeUserId: senderCollegeUserId, email: senderEmail } = await createFixtureCollegeUser(superuser, {
     tenantId,
     role: "college_admin",
     status: "active",
   });
   const { departmentId, name: departmentName } = await createFixtureDepartment(superuser, tenantId);
 
-  return { superuser, pool, tenantId, senderCollegeUserId, departmentId, departmentName };
+  return { superuser, pool, tenantId, senderCollegeUserId, senderEmail, departmentId, departmentName };
 }
 
 async function tearDown(ctx: Ctx): Promise<void> {
@@ -115,7 +117,15 @@ test("committing a file creates valid rows and skips invalid ones", async () => 
     ];
     const importJobId = await createFixtureImportJob(ctx, [header, ...rows].join("\n"));
 
+    await clearMailpit();
     await runCommit(ctx, importJobId);
+
+    // Spec's Message 4 -- sent once the commit job reaches its final chunk.
+    const summaryEmail = await waitForEmailTo(ctx.senderEmail);
+    assert.match(summaryEmail, /Created:\s*2/);
+    assert.match(summaryEmail, /Updated:\s*0/);
+    assert.match(summaryEmail, /Skipped:\s*2/);
+    assert.match(summaryEmail, /No invitation emails have been sent yet/);
 
     const { rows: created } = await ctx.superuser.query<{
       email: string;

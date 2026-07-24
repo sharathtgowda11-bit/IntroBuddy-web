@@ -19,6 +19,7 @@ import {
 } from "@introbuddy/invitations";
 import { Router } from "express";
 import { getEnv } from "../env.js";
+import { recordConsent } from "../db/consents.js";
 import {
   consumePasswordReset,
   createPasswordReset,
@@ -26,9 +27,9 @@ import {
   revokeOpenPasswordResetsForCollegeUser,
 } from "../db/passwordResets.js";
 import { createSession, revokeAllSessionsForCollegeUser } from "../db/sessions.js";
-import { findTenantBySlug } from "../db/tenants.js";
+import { findTenantById, findTenantBySlug } from "../db/tenants.js";
 import { isPasswordBreached } from "../lib/breachedPassword.js";
-import { sendPasswordResetEmail } from "../lib/email.js";
+import { sendPasswordResetEmail, sendStudentActivationConfirmedEmail } from "../lib/email.js";
 import { verifyPassword, setPassword } from "../lib/supabaseAuth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 
@@ -75,26 +76,58 @@ authRouter.post("/activate", byIp("activate"), async (req, res) => {
     const outcome = await withTenant(pool, decoded.tenantId, async (client) => {
       const invitation = await findActiveInvitationByTokenHash(client, tokenHash);
       if (!invitation || invitation.tenantId !== decoded.tenantId) {
-        return { ok: false as const };
+        return { ok: false as const, reason: "invalid_token" as const };
       }
 
       const collegeUser = await findCollegeUserById(client, invitation.collegeUserId);
       if (!collegeUser) {
-        return { ok: false as const };
+        return { ok: false as const, reason: "invalid_token" as const };
+      }
+
+      // Consent (spec 3.4/8.4/14.1 #12) is student-only, and required
+      // before the invitation is consumed -- omitting it rolls back the
+      // whole transaction, so the single-use token stays valid for a retry.
+      if (collegeUser.role === "student" && parsed.data.consentAccepted !== true) {
+        return { ok: false as const, reason: "consent_required" as const };
       }
 
       await consumeInvitation(client, invitation.id);
       await markCollegeUserActive(client, collegeUser.id);
 
-      return { ok: true as const, userId: collegeUser.userId };
+      if (collegeUser.role === "student") {
+        // Atomic with markCollegeUserActive, same principle as ADR 0008
+        // (audit log atomic with its action).
+        await recordConsent(client, decoded.tenantId, collegeUser.id);
+      }
+
+      const tenant = await findTenantById(client, decoded.tenantId);
+
+      return { ok: true as const, userId: collegeUser.userId, collegeUser, tenant };
     });
 
     if (!outcome.ok) {
+      if (outcome.reason === "consent_required") {
+        res.status(400).json({ error: "consent must be accepted to activate a student account" });
+        return;
+      }
       res.status(400).json({ error: "invalid or expired token" });
       return;
     }
 
     await setPassword(outcome.userId, parsed.data.password);
+
+    if (outcome.collegeUser.role === "student") {
+      const env = getEnv();
+      const firstName = outcome.collegeUser.name?.split(" ")[0] || "there";
+      await sendStudentActivationConfirmedEmail({
+        to: outcome.collegeUser.email,
+        firstName,
+        collegeName: outcome.tenant?.name ?? "your college",
+        profileUrl: `${env.WEB_APP_URL}/profile`,
+        collegeAdminEmail: outcome.tenant?.contactEmail ?? null,
+      });
+    }
+
     res.status(200).json({ status: "activated" });
   } catch (error) {
     console.error("activation failed", error);

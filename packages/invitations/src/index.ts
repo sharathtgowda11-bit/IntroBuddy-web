@@ -23,7 +23,13 @@ export {
 } from "./invitationsTable.js";
 export { findAuthUserIdByEmail } from "./authUsers.js";
 export { createIdentity } from "./identity.js";
-export { sendInvitationEmail, type SendInvitationEmailParams } from "./email.js";
+export {
+  sendInvitationEmail,
+  sendImportSummaryEmail,
+  type SendInvitationEmailParams,
+  type SendImportSummaryEmailParams,
+  type StudentInvitationDetails,
+} from "./email.js";
 export {
   generateRawToken,
   hashToken,

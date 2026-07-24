@@ -5,6 +5,7 @@ import { hasPermission, INVITE_TARGET_PERMISSION, InvitationCreateSchema } from 
 import { Router } from "express";
 import { getEnv } from "../env.js";
 import { findDepartmentById } from "../db/departments.js";
+import { findTenantById } from "../db/tenants.js";
 import { resolveSession } from "../middleware/resolveSession.js";
 
 export const invitationsRouter = Router();
@@ -47,6 +48,7 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
   try {
     const result = await withTenant(pool, session.tenantId, async (client) => {
       let degreeId: string | undefined;
+      let departmentName: string | undefined;
       if (role === "student" && departmentId !== undefined) {
         // RLS scopes this lookup to the caller's own tenant, so a
         // cross-tenant departmentId is indistinguishable from a
@@ -56,7 +58,10 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
           return { invalidDepartment: true as const };
         }
         degreeId = department.degreeId;
+        departmentName = department.name;
       }
+
+      const tenant = await findTenantById(client, session.tenantId);
 
       const provisioned = await provisionInvitationInTransaction(pool, client, {
         tenantId: session.tenantId,
@@ -68,7 +73,7 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
         graduationYear,
         invitedByCollegeUserId: session.collegeUserId,
       });
-      return { invalidDepartment: false as const, provisioned };
+      return { invalidDepartment: false as const, provisioned, departmentName, collegeName: tenant?.name };
     });
 
     if (result.invalidDepartment) {
@@ -82,7 +87,16 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
     }
 
     const activationUrl = `${env.WEB_APP_URL}/activate?token=${encodeCompoundToken(session.tenantId, result.provisioned.rawToken)}`;
-    await sendInvitationEmail({ to: email, activationUrl, role });
+    await sendInvitationEmail({
+      to: email,
+      activationUrl,
+      role,
+      collegeName: result.collegeName,
+      student:
+        role === "student"
+          ? { name: null, usn: usn ?? null, departmentName: result.departmentName ?? null, graduationYear: graduationYear ?? null }
+          : undefined,
+    });
 
     res.status(201).json({ status: "invited" });
   } catch (error) {

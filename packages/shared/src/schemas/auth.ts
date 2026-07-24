@@ -35,9 +35,13 @@ export const InvitationCreateSchema = z
   });
 export type InvitationCreateInput = z.infer<typeof InvitationCreateSchema>;
 
+// consentAccepted is only enforced for students (spec 8.4 -- college
+// admins have no consent step); the route handler checks that once the
+// activated row's role is known, since role isn't trusted client input.
 export const ActivateRequestSchema = z.object({
   token: z.string().min(1),
   password: passwordSchema,
+  consentAccepted: z.boolean().optional(),
 });
 export type ActivateRequestInput = z.infer<typeof ActivateRequestSchema>;
 
