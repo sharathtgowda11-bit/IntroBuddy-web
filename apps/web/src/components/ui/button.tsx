@@ -14,6 +14,10 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-brand underline-offset-4 hover:underline",
+        // Opt-in only -- the default button variant stays dark slate
+        // everywhere else in the app; this is for pages that deliberately
+        // want the brand maroon on a CTA (currently just the login page).
+        brand: "bg-brand text-primary-foreground hover:bg-brand/90",
       },
       size: {
         default: "h-10 px-4 py-2",

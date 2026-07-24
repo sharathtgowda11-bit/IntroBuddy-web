@@ -7,6 +7,11 @@ export default defineConfig({
     // Matches WEB_APP_URL in .env.example/.env -- apps/api embeds this
     // origin directly into activation/reset links it emails out, so the
     // dev server must actually be reachable there or those links 404.
+    // host must be the literal IPv4 loopback: leaving it unset resolves
+    // "localhost" to the IPv6 loopback ([::1]) on this machine, which
+    // silently refuses connections to the IPv4 127.0.0.1 those emailed
+    // links use.
+    host: "127.0.0.1",
     port: 3000,
     strictPort: true,
     // Local dev only -- proxies apps/api's own real route prefixes

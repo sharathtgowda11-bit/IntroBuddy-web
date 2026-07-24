@@ -4,18 +4,24 @@ const SESSION_TOKEN_KEY = "introbuddy.sessionToken";
 /**
  * The session token is an opaque compound bearer token
  * ("<tenantId>.<rawToken>") the backend hands back from /auth/login --
- * there's no cookie flow on the API to match, so localStorage + a
- * replayed Authorization header is the whole session mechanism.
+ * there's no cookie flow on the API to match, so a replayed Authorization
+ * header is the whole session mechanism. Storage backend is a login-time
+ * choice ("remember this device"): localStorage persists across browser
+ * restarts, sessionStorage clears when the tab closes. getStoredToken
+ * checks localStorage first since that's the common case.
  */
 export function getStoredToken(): string | null {
-  return localStorage.getItem(SESSION_TOKEN_KEY);
+  return localStorage.getItem(SESSION_TOKEN_KEY) ?? sessionStorage.getItem(SESSION_TOKEN_KEY);
 }
 
-export function setStoredToken(token: string | null): void {
+export function setStoredToken(token: string | null, remember = true): void {
   if (token) {
-    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    (remember ? localStorage : sessionStorage).setItem(SESSION_TOKEN_KEY, token);
+    (remember ? sessionStorage : localStorage).removeItem(SESSION_TOKEN_KEY);
   } else {
+    // Always a clean logout, regardless of which storage was in use.
     localStorage.removeItem(SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
   }
 }
 

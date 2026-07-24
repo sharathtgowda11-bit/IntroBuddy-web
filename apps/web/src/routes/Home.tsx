@@ -1,20 +1,20 @@
+import { Navigate } from "react-router-dom";
 import { useSession } from "../context/sessionContext.js";
 
 /**
- * A placeholder authenticated home screen -- proves the full
- * login -> session-resolve -> shell -> logout loop works end to end.
- * The real dashboard/profile/admin screens are later phases, built on
- * this same shell.
+ * "/" is a role-based dispatcher: every role uses the persistent sidebar
+ * (Sidebar.tsx) for navigation, so their home is simply their main page --
+ * the platform dashboard for super_admin, the college dashboard for
+ * college_admin, and the self-service profile for students.
  */
 export function Home() {
   const { session } = useSession();
 
-  return (
-    <div className="space-y-2">
-      <h1 className="text-2xl font-semibold">Welcome{session?.name ? `, ${session.name}` : ""}</h1>
-      <p className="text-muted-foreground">
-        Signed in as <span className="font-medium text-foreground">{session?.email}</span> ({session?.role})
-      </p>
-    </div>
-  );
+  if (session?.role === "super_admin") {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  if (session?.role === "college_admin") {
+    return <Navigate to="/college/dashboard" replace />;
+  }
+  return <Navigate to="/profile" replace />;
 }

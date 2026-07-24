@@ -36,8 +36,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loginWithToken = useCallback(async (token: string) => {
-    setStoredToken(token);
+  const loginWithToken = useCallback(async (token: string, remember = true) => {
+    setStoredToken(token, remember);
     setIsLoading(true);
     const resolved = await fetchSession();
     setSession(resolved);

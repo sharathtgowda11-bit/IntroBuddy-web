@@ -15,7 +15,7 @@ export interface SessionContextValue {
   session: SessionInfo | null;
   /** True only while the initial session resolution (on load, or right after login) is in flight. */
   isLoading: boolean;
-  loginWithToken: (token: string) => Promise<void>;
+  loginWithToken: (token: string, remember?: boolean) => Promise<void>;
   logout: () => void;
   /** Reuses the exact same hasPermission the backend enforces -- not a re-implementation. */
   can: (permission: Permission) => boolean;

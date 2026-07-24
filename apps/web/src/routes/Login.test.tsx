@@ -32,17 +32,17 @@ describe("Login", () => {
     );
 
     await user.type(screen.getByLabelText(/college id/i), "rvce");
-    await user.type(screen.getByLabelText(/email or usn/i), "1rv20cs001");
+    await user.type(screen.getByLabelText(/^email$/i), "student@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "Correct-Horse-9");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(apiPost).toHaveBeenCalledWith("/auth/login", {
       tenantSlug: "rvce",
-      emailOrUsn: "1rv20cs001",
+      emailOrUsn: "student@example.com",
       password: "Correct-Horse-9",
     });
     expect(await screen.findByRole("button", { name: /sign in/i })).toBeEnabled();
-    expect(loginWithToken).toHaveBeenCalledWith("tenant-id.raw-token");
+    expect(loginWithToken).toHaveBeenCalledWith("tenant-id.raw-token", true);
   });
 
   it("shows the backend's error message on failed login", async () => {
@@ -56,11 +56,30 @@ describe("Login", () => {
     );
 
     await user.type(screen.getByLabelText(/college id/i), "rvce");
-    await user.type(screen.getByLabelText(/email or usn/i), "1rv20cs001");
+    await user.type(screen.getByLabelText(/^email$/i), "student@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "wrong-password");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(await screen.findByText("invalid credentials")).toBeInTheDocument();
     expect(loginWithToken).not.toHaveBeenCalled();
+  });
+
+  it("passes remember: false through to loginWithToken when unchecked", async () => {
+    vi.mocked(apiPost).mockResolvedValue({ token: "tenant-id.raw-token" });
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByLabelText(/college id/i), "rvce");
+    await user.type(screen.getByLabelText(/^email$/i), "student@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "Correct-Horse-9");
+    await user.click(screen.getByLabelText(/remember this device/i));
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    expect(loginWithToken).toHaveBeenCalledWith("tenant-id.raw-token", false);
   });
 });
