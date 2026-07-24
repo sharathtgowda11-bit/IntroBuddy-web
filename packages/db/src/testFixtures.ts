@@ -39,22 +39,25 @@ export async function createFixtureIdentity(superuser: Client, email: string): P
 export interface FixtureCollegeUser {
   tenantId: string;
   role?: "super_admin" | "college_admin" | "student";
-  status?: "invited" | "active";
+  status?: "invited" | "active" | "deactivated";
   usn?: string;
+  name?: string;
+  departmentId?: string;
+  graduationYear?: number;
 }
 
 /** Creates a fixture identity plus its college_users row together, and returns both ids. */
 export async function createFixtureCollegeUser(
   superuser: Client,
-  { tenantId, role = "student", status = "active", usn }: FixtureCollegeUser,
+  { tenantId, role = "student", status = "active", usn, name, departmentId, graduationYear }: FixtureCollegeUser,
 ): Promise<{ collegeUserId: string; userId: string; email: string }> {
   const email = `fixture-${uniqueSuffix()}@example.com`;
   const userId = await createFixtureIdentity(superuser, email);
   const result = await superuser.query<{ id: string }>(
-    `insert into public.college_users (tenant_id, user_id, email, usn, role, status)
-     values ($1, $2, $3, $4, $5, $6)
+    `insert into public.college_users (tenant_id, user_id, email, usn, name, department_id, graduation_year, role, status)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      returning id`,
-    [tenantId, userId, email, usn ?? null, role, status],
+    [tenantId, userId, email, usn ?? null, name ?? null, departmentId ?? null, graduationYear ?? null, role, status],
   );
   return { collegeUserId: result.rows[0].id, userId, email };
 }

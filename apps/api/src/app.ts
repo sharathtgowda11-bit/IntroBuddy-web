@@ -1,12 +1,15 @@
 import express, { type Express } from "express";
+import { auditLogRouter } from "./routes/auditLog.js";
 import { authRouter } from "./routes/auth.js";
 import { collegesRouter } from "./routes/colleges.js";
+import { dashboardRouter } from "./routes/dashboard.js";
 import { degreesRouter } from "./routes/degrees.js";
 import { departmentsRouter } from "./routes/departments.js";
 import { healthRouter } from "./routes/health.js";
 import { importJobsRouter } from "./routes/importJobs.js";
 import { invitationsRouter } from "./routes/invitations.js";
 import { meRouter } from "./routes/me.js";
+import { studentsRouter } from "./routes/students.js";
 
 export function createApp(): Express {
   const app = express();
@@ -19,5 +22,8 @@ export function createApp(): Express {
   app.use("/departments", departmentsRouter);
   app.use("/import-jobs", importJobsRouter);
   app.use("/me", meRouter);
+  app.use("/students", studentsRouter);
+  app.use("/dashboard", dashboardRouter);
+  app.use("/audit-log", auditLogRouter);
   return app;
 }

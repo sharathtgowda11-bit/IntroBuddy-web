@@ -48,3 +48,9 @@ export {
   type CertificationCreateInput,
   type CertificationUpdateInput,
 } from "./schemas/profile.js";
+export {
+  StudentEditSchema,
+  StudentStatusUpdateSchema,
+  type StudentEditInput,
+  type StudentStatusUpdateInput,
+} from "./schemas/students.js";
