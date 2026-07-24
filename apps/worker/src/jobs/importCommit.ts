@@ -140,8 +140,11 @@ export async function processImportCommit(pool: Pool, job: JobRecord): Promise<v
         createdCount: createCount,
         updatedCount: updateCount,
         errorCount,
-        errorReportUrl: `${env.WEB_APP_URL}/import-jobs/${importJobId}/errors`,
-        reviewUrl: `${env.WEB_APP_URL}/import-jobs/${importJobId}`,
+        // Both point at the same wizard page -- the review step there
+        // (apps/web's ImportWizard) already surfaces the error count and a
+        // "Download errors CSV" action; there's no separate errors page.
+        errorReportUrl: `${env.WEB_APP_URL}/college/import/${importJobId}`,
+        reviewUrl: `${env.WEB_APP_URL}/college/import/${importJobId}`,
       });
     }
   } catch (error) {
