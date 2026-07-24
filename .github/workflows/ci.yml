@@ -34,6 +34,7 @@ jobs:
           npx tsc --noEmit -p packages/jobs/tsconfig.json
           npx tsc --noEmit -p apps/api/tsconfig.json
           npx tsc --noEmit -p apps/worker/tsconfig.json
+          npx tsc -b apps/web --noEmit
 
       # Per spec section 6.6: must never be skipped or deleted from CI.
       # Stays first and unmodified -- everything else builds on this
@@ -67,6 +68,14 @@ jobs:
           npm run build --workspace=@introbuddy/import
           npm run build --workspace=@introbuddy/invitations
           npm run build --workspace=@introbuddy/jobs
+
+      # Mocks apiClient entirely, so no backend/Supabase dependency --
+      # only needs @introbuddy/shared's dist output from the build step above.
+      - name: Web app tests
+        run: npm run test --workspace=@introbuddy/web
+
+      - name: Build apps/web
+        run: npm run build --workspace=@introbuddy/web
 
       - name: Export local Supabase connection details
         run: |

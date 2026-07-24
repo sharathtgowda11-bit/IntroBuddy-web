@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The confirmed IntroBuddy palette (see the frontend Phase 1 plan):
+ * brand (plum, #6B2545) is deliberately separate from the primary button
+ * color (dark slate, #1E293B) so no red-family hue ever appears as an
+ * interactive affordance -- only shadcn/ui's own --primary/--destructive
+ * convention plus our own --brand/--brand-accent/--success additions.
+ */
+@layer base {
+  :root {
+    --background: 210 17% 98%;       /* #F8F9FA */
+    --foreground: 0 0% 10%;          /* #1A1A1A */
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    --primary: 217 33% 17%;          /* #1E293B dark slate -- buttons/CTAs */
+    --primary-foreground: 210 20% 98%;
+
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 217 33% 17%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 220 9% 46%;  /* #6B7280 */
+
+    --accent: 210 20% 92%;
+    --accent-foreground: 217 33% 17%;
+
+    --destructive: 0 72% 51%;        /* #DC2626 -- delete/error only */
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 333 49% 28%;
+
+    --radius: 0.5rem;
+
+    /* Brand-specific, beyond shadcn's default set. */
+    --brand: 333 49% 28%;            /* #6B2545 plum -- links/headers/logo */
+    --brand-accent: 26 90% 37%;      /* #B45309 amber -- highlights/badges */
+    --success: 160 84% 39%;          /* #10B981 */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

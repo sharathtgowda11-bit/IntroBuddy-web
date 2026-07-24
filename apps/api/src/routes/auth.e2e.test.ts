@@ -285,6 +285,22 @@ test("student invitation email is personalized with USN, department, and batch",
   }
 });
 
+test("GET /session resolves the caller's own tenant, role, and identity", async () => {
+  const ctx = await setUp();
+  try {
+    const response = await request(app).get("/auth/session").set("Authorization", ctx.senderAuthHeader);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.tenantId, ctx.tenantId);
+    assert.equal(response.body.tenantSlug, ctx.tenantSlug);
+    assert.equal(response.body.role, "college_admin");
+
+    const unauthenticated = await request(app).get("/auth/session");
+    assert.equal(unauthenticated.status, 401);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
 test("login gives an identical response for an unknown identifier and a wrong password", async () => {
   const ctx = await setUp();
   try {

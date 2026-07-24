@@ -32,6 +32,7 @@ import { isPasswordBreached } from "../lib/breachedPassword.js";
 import { sendPasswordResetEmail, sendStudentActivationConfirmedEmail } from "../lib/email.js";
 import { verifyPassword, setPassword } from "../lib/supabaseAuth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
+import { resolveSession } from "../middleware/resolveSession.js";
 
 export const authRouter = Router();
 
@@ -179,6 +180,42 @@ authRouter.post("/login", byIp("login"), async (req, res) => {
   } catch (error) {
     console.error("login failed", error);
     genericFailure();
+  }
+});
+
+/**
+ * "Whoami" -- the frontend needs to know who's logged in (role, tenant)
+ * both right after login and on every page reload, since /auth/login's
+ * own response is deliberately just a bearer token. No specific
+ * permission gate: any authenticated role may read its own session.
+ */
+authRouter.get("/session", resolveSession(), async (req, res) => {
+  const session = req.session!;
+  const pool = getPool();
+
+  try {
+    const { collegeUser, tenant } = await withTenant(pool, session.tenantId, async (client) => {
+      const collegeUser = await findCollegeUserById(client, session.collegeUserId);
+      const tenant = await findTenantById(client, session.tenantId);
+      return { collegeUser, tenant };
+    });
+
+    if (!collegeUser) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+
+    res.status(200).json({
+      tenantId: session.tenantId,
+      tenantSlug: tenant?.slug ?? null,
+      collegeUserId: session.collegeUserId,
+      role: session.role,
+      email: collegeUser.email,
+      name: collegeUser.name,
+    });
+  } catch (error) {
+    console.error("failed to resolve session", error);
+    res.status(500).json({ error: "internal error" });
   }
 });
 
