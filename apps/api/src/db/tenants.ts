@@ -89,6 +89,42 @@ export async function findOrCreatePlatformTenant(pool: Pool): Promise<TenantReco
   return created;
 }
 
+export interface CollegeSummary extends TenantRecord {
+  totalStudents: number;
+  activeStudents: number;
+}
+
+interface CollegeSummaryRow extends TenantRow {
+  total_students: number;
+  active_students: number;
+}
+
+/**
+ * Platform-wide, cross-tenant by design -- excludes the "platform"
+ * sentinel tenant itself (super_admin's own anchor, not a real college).
+ * Per-college student counts come from get_student_counts_by_tenant(),
+ * the one SECURITY DEFINER escape hatch for this aggregate (college_users
+ * is FORCE RLS, unlike tenants). Runs on the plain pool, same as every
+ * other tenants query in this file.
+ */
+export async function listCollegesWithStudentCounts(pool: Pool): Promise<CollegeSummary[]> {
+  const result = await pool.query<CollegeSummaryRow>(`
+    select t.id, t.slug, t.name, t.state, t.city, t.status, t.description, t.contact_email, t.contact_phone,
+           t.logo_path, t.banner_path,
+           coalesce(sc.total_students, 0)::int as total_students,
+           coalesce(sc.active_students, 0)::int as active_students
+    from public.tenants t
+    left join public.get_student_counts_by_tenant() sc on sc.tenant_id = t.id
+    where t.slug != 'platform'
+    order by t.name
+  `);
+  return result.rows.map((row) => ({
+    ...mapRow(row),
+    totalStudents: row.total_students,
+    activeStudents: row.active_students,
+  }));
+}
+
 export interface CreateTenantParams {
   id: string;
   name: string;

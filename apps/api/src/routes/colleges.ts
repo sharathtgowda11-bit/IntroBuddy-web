@@ -13,7 +13,7 @@ import type { Pool } from "pg";
 import { createDegree } from "../db/degrees.js";
 import { createDepartment } from "../db/departments.js";
 import { writeAuditLog } from "../db/auditLog.js";
-import { createTenant, findTenantBySlug, findTenantById, updateTenantProfile } from "../db/tenants.js";
+import { createTenant, findTenantBySlug, findTenantById, listCollegesWithStudentCounts, updateTenantProfile } from "../db/tenants.js";
 import { getEnv } from "../env.js";
 import { sendCollegeAdminInvitationEmail } from "../lib/email.js";
 import { stripExifAndNormalize } from "../lib/imageProcessing.js";
@@ -39,6 +39,20 @@ async function generateUniqueSlug(pool: Pool, name: string): Promise<string> {
   }
   return candidate;
 }
+
+// Platform-wide, for super_admin's dashboard -- deliberately unscoped (no
+// withTenant), same as findTenantById's own precedent that tenants
+// carries no RLS. See listCollegesWithStudentCounts for how per-college
+// student counts cross tenant boundaries safely.
+collegesRouter.get("/", resolveSession(), requirePermission(PERMISSIONS.COLLEGE_VIEW_ALL), async (req, res) => {
+  try {
+    const colleges = await listCollegesWithStudentCounts(getPool());
+    res.status(200).json({ colleges });
+  } catch (error) {
+    console.error("failed to list colleges", error);
+    res.status(500).json({ error: "internal error" });
+  }
+});
 
 collegesRouter.post("/", resolveSession(), requirePermission(PERMISSIONS.COLLEGE_CREATE), async (req, res) => {
   const parsed = CollegeCreateSchema.safeParse(req.body);
