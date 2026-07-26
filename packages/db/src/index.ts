@@ -10,10 +10,12 @@ export {
   createFixtureCollegeUser,
   createFixtureDepartment,
   createFixtureIdentity,
+  createFixtureOpportunity,
   createFixtureTenant,
   fixtureExpiry,
   fixtureTokenHash,
   uniqueSuffix,
   type FixtureCollegeUser,
+  type FixtureOpportunity,
   type FixtureTenant,
 } from "./testFixtures.js";

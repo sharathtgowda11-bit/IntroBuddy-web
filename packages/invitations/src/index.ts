@@ -5,8 +5,10 @@ export {
   findPendingCollegeAdmin,
   createCollegeUser,
   updateCollegeUserAcademicFields,
+  updateAlumniAcademicFields,
   markCollegeUserActive,
   listExistingStudentIdentifiers,
+  listExistingCollegeUserEmailsByRole,
   countPendingInvitationsForImportJob,
   listPendingInvitationCandidates,
   type CollegeUserRecord,
@@ -29,6 +31,7 @@ export {
   type SendInvitationEmailParams,
   type SendImportSummaryEmailParams,
   type StudentInvitationDetails,
+  type AlumniInvitationDetails,
 } from "./email.js";
 export {
   generateRawToken,

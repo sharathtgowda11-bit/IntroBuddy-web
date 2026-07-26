@@ -102,3 +102,37 @@ export async function sendStudentActivationConfirmedEmail({
     text: `Hi ${firstName},\n\nYour IntroBuddy account is now active.\n\nNext step: complete your profile. You will need a profile photo and your LinkedIn URL - these are required before you can connect with alumni.\n\n${profileUrl}\n\n${contactLine}`,
   });
 }
+
+export interface SendAlumniActivationConfirmedEmailParams {
+  to: string;
+  firstName: string;
+  collegeName: string;
+  profileUrl: string;
+  collegeAdminEmail: string | null;
+}
+
+/**
+ * Phase 2, Part 9.3 -- alumni-appropriate variant of the student
+ * activation-confirmed email above, sent once right after an alumnus's
+ * own activation (setPassword) succeeds. Points at the 3-step profile
+ * setup rather than a single profile page, since posting opportunities
+ * and receiving requests both require a complete profile first.
+ */
+export async function sendAlumniActivationConfirmedEmail({
+  to,
+  firstName,
+  collegeName,
+  profileUrl,
+  collegeAdminEmail,
+}: SendAlumniActivationConfirmedEmailParams): Promise<void> {
+  const env = getEnv();
+  const contactLine = collegeAdminEmail
+    ? `If you did not set this password, contact your placement office immediately at ${collegeAdminEmail}.`
+    : "If you did not set this password, contact your placement office immediately.";
+  await getTransporter().sendMail({
+    from: env.SMTP_FROM,
+    to,
+    subject: `Your ${collegeName} alumni account is active`,
+    text: `Hi ${firstName},\n\nYour IntroBuddy alumni account is now active.\n\nNext step: complete your 3-step profile. You will need a profile photo, your LinkedIn URL, and a few details about your current role - these are required before students can find you or send you a request.\n\n${profileUrl}\n\n${contactLine}`,
+  });
+}

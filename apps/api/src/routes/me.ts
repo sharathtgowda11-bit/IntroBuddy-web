@@ -1,5 +1,6 @@
 import { getPool, withTenant } from "@introbuddy/db";
 import {
+  AlumniProfilePatchSchema,
   CertificationCreateSchema,
   CertificationUpdateSchema,
   PERMISSIONS,
@@ -7,8 +8,10 @@ import {
 } from "@introbuddy/shared";
 import { Router } from "express";
 import multer from "multer";
+import { getOwnAlumniProfile, isAlumniProfileComplete, upsertAlumniProfile } from "../db/alumniProfiles.js";
 import { createCertification, deleteCertification, listCertifications, updateCertification } from "../db/certifications.js";
 import { getOwnProfile, upsertStudentProfile } from "../db/studentProfiles.js";
+import { getSignedAlumniMediaUrl, uploadAlumniAvatar } from "../lib/alumniMedia.js";
 import { stripExifAndNormalize } from "../lib/imageProcessing.js";
 import { getSignedStudentMediaUrl, uploadStudentAvatar, uploadStudentResume } from "../lib/studentMedia.js";
 import { requirePermission } from "../middleware/requirePermission.js";
@@ -21,9 +24,55 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // matches supabase/config.toml's student-media bucket
 });
 
+// PATCH/GET /me/profile are role-aware: branch on session.role. The
+// student path below is entirely unchanged. One endpoint, one URL, one
+// permission (PROFILE_EDIT_OWN) for both roles -- no separate
+// /me/alumni-profile route (Part 8.6).
 meRouter.get("/profile", resolveSession(), requirePermission(PERMISSIONS.PROFILE_EDIT_OWN), async (req, res) => {
   const session = req.session!;
   const pool = getPool();
+
+  if (session.role === "alumni") {
+    try {
+      const profile = await withTenant(pool, session.tenantId, (client) => getOwnAlumniProfile(client, session.collegeUserId));
+      if (!profile) {
+        res.status(404).json({ error: "not found" });
+        return;
+      }
+
+      const avatarUrl = profile.avatarPath ? await getSignedAlumniMediaUrl(profile.avatarPath) : null;
+
+      res.status(200).json({
+        name: profile.name,
+        email: profile.email,
+        // Read-only graduation block -- college name, department name,
+        // degree name, graduation year -- Step 2 of the wizard is a
+        // display, never an input (Part 4).
+        collegeName: profile.collegeName,
+        degreeName: profile.degreeName,
+        departmentName: profile.departmentName,
+        graduationYear: profile.graduationYear,
+        avatarUrl,
+        bio: profile.bio,
+        phone: profile.phone,
+        linkedinUrl: profile.linkedinUrl,
+        githubUrl: profile.githubUrl,
+        company: profile.company,
+        jobTitle: profile.jobTitle,
+        skills: profile.skills,
+        country: profile.country,
+        city: profile.city,
+        yearsOfExperience: profile.yearsOfExperience,
+        workEmail: profile.workEmail,
+        // Computed, never stored -- recomputed on every read (Part 4).
+        profileComplete: isAlumniProfileComplete(profile),
+      });
+    } catch (error) {
+      console.error("failed to load own alumni profile", error);
+      res.status(500).json({ error: "internal error" });
+    }
+    return;
+  }
 
   try {
     const { profile, certifications } = await withTenant(pool, session.tenantId, async (client) => {
@@ -78,15 +127,63 @@ meRouter.patch(
     { name: "resume", maxCount: 1 },
   ]),
   async (req, res) => {
+    const session = req.session!;
+    const pool = getPool();
+    const files = req.files as { avatar?: Express.Multer.File[]; resume?: Express.Multer.File[] } | undefined;
+
+    if (session.role === "alumni") {
+      // skills arrives as a JSON-encoded string -- multipart form fields
+      // can't reliably round-trip a single-element array -- decoded here,
+      // at the transport boundary, before the schema (which expects a
+      // real string array) ever sees it.
+      const body = { ...req.body };
+      if (typeof body.skills === "string") {
+        try {
+          body.skills = JSON.parse(body.skills);
+        } catch {
+          res.status(400).json({ error: "invalid request", details: { skills: "must be valid JSON" } });
+          return;
+        }
+      }
+
+      const parsed = AlumniProfilePatchSchema.safeParse(body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "invalid request", details: parsed.error.flatten() });
+        return;
+      }
+
+      try {
+        let avatarPath: string | undefined;
+        if (files?.avatar?.[0]) {
+          const processed = await stripExifAndNormalize(files.avatar[0].buffer);
+          avatarPath = await uploadAlumniAvatar(
+            session.tenantId,
+            session.collegeUserId,
+            processed.buffer,
+            processed.contentType,
+            processed.extension,
+          );
+        }
+
+        // This upsert is what creates the alumni_profiles row on first
+        // call -- never created eagerly during import commit (Part 4).
+        await withTenant(pool, session.tenantId, (client) =>
+          upsertAlumniProfile(client, session.tenantId, session.collegeUserId, { avatarPath, ...parsed.data }),
+        );
+
+        res.status(200).json({ status: "updated" });
+      } catch (error) {
+        console.error("failed to update own alumni profile", error);
+        res.status(500).json({ error: "internal error" });
+      }
+      return;
+    }
+
     const parsed = StudentProfileUpdateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid request", details: parsed.error.flatten() });
       return;
     }
-
-    const session = req.session!;
-    const pool = getPool();
-    const files = req.files as { avatar?: Express.Multer.File[]; resume?: Express.Multer.File[] } | undefined;
 
     try {
       let avatarPath: string | undefined;

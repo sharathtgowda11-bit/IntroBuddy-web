@@ -2,6 +2,9 @@ import type { PoolClient } from "pg";
 
 export type ImportJobPhase = "uploaded" | "mapped" | "validated" | "committing" | "committed" | "failed";
 
+/** Which onboarding pipeline this job commits into. Threaded from creation through to the worker's commit branch (Phase 2). */
+export type ImportTargetRole = "student" | "alumni";
+
 export interface ImportJobRecord {
   id: string;
   tenantId: string;
@@ -10,6 +13,7 @@ export interface ImportJobRecord {
   filePath: string;
   fileSha256: string;
   columnMapping: Record<string, string>;
+  targetRole: ImportTargetRole;
   phase: ImportJobPhase;
   rowCount: number | null;
   validCount: number | null;
@@ -31,6 +35,7 @@ interface ImportJobRow {
   file_path: string;
   file_sha256: string;
   column_mapping: Record<string, string>;
+  target_role: ImportTargetRole;
   phase: ImportJobPhase;
   row_count: number | null;
   valid_count: number | null;
@@ -46,7 +51,7 @@ interface ImportJobRow {
 
 const SELECT_COLUMNS = `
   id, tenant_id, created_by_college_user_id, original_filename, file_path, file_sha256,
-  column_mapping, phase, row_count, valid_count, invalid_count, create_count, update_count,
+  column_mapping, target_role, phase, row_count, valid_count, invalid_count, create_count, update_count,
   committed_row_count, committed_at, error_message, created_at, updated_at
 `;
 
@@ -59,6 +64,7 @@ function mapRow(row: ImportJobRow): ImportJobRecord {
     filePath: row.file_path,
     fileSha256: row.file_sha256,
     columnMapping: row.column_mapping,
+    targetRole: row.target_role,
     phase: row.phase,
     rowCount: row.row_count,
     validCount: row.valid_count,
@@ -82,13 +88,15 @@ export interface CreateImportJobParams {
   filePath: string;
   fileSha256: string;
   columnMapping: Record<string, string>;
+  /** Defaults to 'student' at the DB level too, for backward compatibility with the pre-Phase-2 student-import UI. */
+  targetRole?: ImportTargetRole;
 }
 
 export async function createImportJob(client: PoolClient, params: CreateImportJobParams): Promise<ImportJobRecord> {
   const result = await client.query<ImportJobRow>(
     `insert into public.import_jobs
-       (id, tenant_id, created_by_college_user_id, original_filename, file_path, file_sha256, column_mapping)
-     values ($1, $2, $3, $4, $5, $6, $7)
+       (id, tenant_id, created_by_college_user_id, original_filename, file_path, file_sha256, column_mapping, target_role)
+     values ($1, $2, $3, $4, $5, $6, $7, coalesce($8, 'student'))
      returning ${SELECT_COLUMNS}`,
     [
       params.id,
@@ -98,6 +106,7 @@ export async function createImportJob(client: PoolClient, params: CreateImportJo
       params.filePath,
       params.fileSha256,
       params.columnMapping,
+      params.targetRole ?? null,
     ],
   );
   return mapRow(result.rows[0]);

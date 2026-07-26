@@ -36,9 +36,13 @@ export {
   ColumnMappingSchema,
   ImportMappingUpdateSchema,
   ImportSendInvitationsSchema,
+  AlumniColumnMappingSchema,
+  AlumniImportMappingUpdateSchema,
   type ColumnMappingInput,
   type ImportMappingUpdateInput,
   type ImportSendInvitationsInput,
+  type AlumniColumnMappingInput,
+  type AlumniImportMappingUpdateInput,
 } from "./schemas/imports.js";
 export {
   StudentProfileUpdateSchema,
@@ -54,3 +58,21 @@ export {
   type StudentEditInput,
   type StudentStatusUpdateInput,
 } from "./schemas/students.js";
+export {
+  AlumniCreateSchema,
+  AlumniEditSchema,
+  AlumniStatusUpdateSchema,
+  AlumniProfilePatchSchema,
+  OpportunityCreateSchema,
+  OpportunityUpdateSchema,
+  RequestCreateSchema,
+  RequestRespondSchema,
+  type AlumniCreateInput,
+  type AlumniEditInput,
+  type AlumniStatusUpdateInput,
+  type AlumniProfilePatchInput,
+  type OpportunityCreateInput,
+  type OpportunityUpdateInput,
+  type RequestCreateInput,
+  type RequestRespondInput,
+} from "./schemas/alumni.js";

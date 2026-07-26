@@ -40,6 +40,13 @@ export interface StudentInvitationDetails {
   graduationYear: number | null;
 }
 
+/** Phase 2: same personalization idea as StudentInvitationDetails, minus USN (alumni have none). */
+export interface AlumniInvitationDetails {
+  name: string | null;
+  departmentName: string | null;
+  graduationYear: number | null;
+}
+
 export interface SendInvitationEmailParams {
   to: string;
   activationUrl: string;
@@ -47,6 +54,8 @@ export interface SendInvitationEmailParams {
   /** Only meaningful when role === "student" -- see the personalized branch below. */
   collegeName?: string;
   student?: StudentInvitationDetails;
+  /** Only meaningful when role === "alumni" -- see the personalized branch below. */
+  alumnus?: AlumniInvitationDetails;
 }
 
 /**
@@ -64,6 +73,7 @@ export async function sendInvitationEmail({
   role,
   collegeName,
   student,
+  alumnus,
 }: SendInvitationEmailParams): Promise<void> {
   const from = process.env.SMTP_FROM;
   if (!from) {
@@ -77,6 +87,19 @@ export async function sendInvitationEmail({
       to,
       subject: `${firstName}, activate your ${collegeName} alumni account`,
       text: `Hi ${firstName},\n\n${collegeName} has created an account for you on IntroBuddy - a platform where you can connect with alumni from your college for mentorship, career guidance, and referrals.\n\nYour details:\n  Name: ${student.name ?? "N/A"}\n  USN: ${student.usn ?? "N/A"}\n  Department: ${student.departmentName ?? "N/A"}\n  Batch: ${student.graduationYear ?? "N/A"}\n\nSet your password to activate your account:\n${activationUrl}\n\nThis link works once and expires in 7 days.\n\nIf any of the details above are wrong, reply to this email and your placement office will correct them.\n\n- ${collegeName} Placement Cell\n  Sent via IntroBuddy`,
+    });
+    return;
+  }
+
+  // Phase 2: personalized alumni invitation, same idea as the student
+  // branch above minus USN (alumni have none).
+  if (role === "alumni" && collegeName && alumnus) {
+    const firstName = alumnus.name?.split(" ")[0] || "there";
+    await getTransporter().sendMail({
+      from,
+      to,
+      subject: `${firstName}, join ${collegeName}'s verified alumni network on IntroBuddy`,
+      text: `Hi ${firstName},\n\n${collegeName} has invited you to join their verified alumni network on IntroBuddy - a platform where current students can reach out to you for mentorship, career guidance, and referrals.\n\nYour details:\n  Name: ${alumnus.name ?? "N/A"}\n  Department: ${alumnus.departmentName ?? "N/A"}\n  Graduation year: ${alumnus.graduationYear ?? "N/A"}\n\nSet your password to activate your account:\n${activationUrl}\n\nThis link works once and expires in 7 days.\n\nIf any of the details above are wrong, reply to this email and your college's placement office will correct them.\n\n- ${collegeName} Placement Cell\n  Sent via IntroBuddy`,
     });
     return;
   }
@@ -99,6 +122,8 @@ export interface SendImportSummaryEmailParams {
   errorCount: number;
   errorReportUrl: string;
   reviewUrl: string;
+  /** Phase 2: which onboarding pipeline this import committed into -- parametrizes the copy below. Defaults to "student" so every pre-Phase-2 call site keeps working unchanged. */
+  targetRole?: "student" | "alumni";
 }
 
 /**
@@ -117,6 +142,7 @@ export async function sendImportSummaryEmail({
   errorCount,
   errorReportUrl,
   reviewUrl,
+  targetRole = "student",
 }: SendImportSummaryEmailParams): Promise<void> {
   const from = process.env.SMTP_FROM;
   if (!from) {
@@ -124,6 +150,8 @@ export async function sendImportSummaryEmail({
   }
   const successCount = createdCount + updatedCount;
   const totalCount = successCount + errorCount;
+  const label = targetRole === "alumni" ? "Alumni" : "Student";
+  const pluralLabel = targetRole === "alumni" ? "alumni" : "students";
 
   const errorParagraph =
     errorCount > 0
@@ -133,7 +161,7 @@ export async function sendImportSummaryEmail({
   await getTransporter().sendMail({
     from,
     to,
-    subject: `Student import complete - ${successCount} of ${totalCount} imported`,
-    text: `Hi ${adminFirstName},\n\nYour student import for ${collegeName} has finished.\n\n  File: ${fileName}\n  Created: ${createdCount}\n  Updated: ${updatedCount}\n  Skipped: ${errorCount}\n\n${errorParagraph}No invitation emails have been sent yet. Review the imported students, then send invitations when you are ready:\n${reviewUrl}`,
+    subject: `${label} import complete - ${successCount} of ${totalCount} imported`,
+    text: `Hi ${adminFirstName},\n\nYour ${targetRole} import for ${collegeName} has finished.\n\n  File: ${fileName}\n  Created: ${createdCount}\n  Updated: ${updatedCount}\n  Skipped: ${errorCount}\n\n${errorParagraph}No invitation emails have been sent yet. Review the imported ${pluralLabel}, then send invitations when you are ready:\n${reviewUrl}`,
   });
 }

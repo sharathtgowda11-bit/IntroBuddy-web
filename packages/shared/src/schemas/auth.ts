@@ -12,7 +12,7 @@ export const passwordSchema = z.string().min(PASSWORD_MIN_LENGTH);
 export const InvitationCreateSchema = z
   .object({
     email: z.string().email(),
-    role: z.enum(["college_admin", "student"]),
+    role: z.enum(["college_admin", "student", "alumni"]),
     usn: z.string().min(1).optional(),
     departmentId: z.string().uuid().optional(),
     graduationYear: z.number().int().optional(),
@@ -25,13 +25,17 @@ export const InvitationCreateSchema = z
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required for students` });
         }
       }
-    } else {
+    } else if (data.role === "college_admin") {
       for (const [key, value] of Object.entries(studentFields)) {
         if (value !== undefined) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is only valid for students` });
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is only valid for students and alumni` });
         }
       }
     }
+    // role === "alumni": departmentId/graduationYear are optional -- admin
+    // may not have this data at invite time (same settled decision as bulk
+    // import, see packages/import's alumni row validation) -- neither
+    // required nor forbidden.
   });
 export type InvitationCreateInput = z.infer<typeof InvitationCreateSchema>;
 

@@ -29,7 +29,11 @@ import {
 import { createSession, revokeAllSessionsForCollegeUser } from "../db/sessions.js";
 import { findTenantById, findTenantBySlug } from "../db/tenants.js";
 import { isPasswordBreached } from "../lib/breachedPassword.js";
-import { sendPasswordResetEmail, sendStudentActivationConfirmedEmail } from "../lib/email.js";
+import {
+  sendAlumniActivationConfirmedEmail,
+  sendPasswordResetEmail,
+  sendStudentActivationConfirmedEmail,
+} from "../lib/email.js";
 import { verifyPassword, setPassword } from "../lib/supabaseAuth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { resolveSession } from "../middleware/resolveSession.js";
@@ -85,17 +89,19 @@ authRouter.post("/activate", byIp("activate"), async (req, res) => {
         return { ok: false as const, reason: "invalid_token" as const };
       }
 
-      // Consent (spec 3.4/8.4/14.1 #12) is student-only, and required
-      // before the invitation is consumed -- omitting it rolls back the
-      // whole transaction, so the single-use token stays valid for a retry.
-      if (collegeUser.role === "student" && parsed.data.consentAccepted !== true) {
+      // Consent (spec 3.4/8.4/14.1 #12) is student-only originally, widened
+      // in Phase 2 to also cover alumni: alumni data is uploaded by the
+      // college without their consent too, and the same DPDP-style
+      // obligation applies equally. Omitting it rolls back the whole
+      // transaction, so the single-use token stays valid for a retry.
+      if ((collegeUser.role === "student" || collegeUser.role === "alumni") && parsed.data.consentAccepted !== true) {
         return { ok: false as const, reason: "consent_required" as const };
       }
 
       await consumeInvitation(client, invitation.id);
       await markCollegeUserActive(client, collegeUser.id);
 
-      if (collegeUser.role === "student") {
+      if (collegeUser.role === "student" || collegeUser.role === "alumni") {
         // Atomic with markCollegeUserActive, same principle as ADR 0008
         // (audit log atomic with its action).
         await recordConsent(client, decoded.tenantId, collegeUser.id);
@@ -108,7 +114,7 @@ authRouter.post("/activate", byIp("activate"), async (req, res) => {
 
     if (!outcome.ok) {
       if (outcome.reason === "consent_required") {
-        res.status(400).json({ error: "consent must be accepted to activate a student account" });
+        res.status(400).json({ error: "consent must be accepted to activate this account" });
         return;
       }
       res.status(400).json({ error: "invalid or expired token" });
@@ -125,6 +131,18 @@ authRouter.post("/activate", byIp("activate"), async (req, res) => {
         firstName,
         collegeName: outcome.tenant?.name ?? "your college",
         profileUrl: `${env.WEB_APP_URL}/profile`,
+        collegeAdminEmail: outcome.tenant?.contactEmail ?? null,
+      });
+    } else if (outcome.collegeUser.role === "alumni") {
+      // Points at the 3-step profile setup instead of a single profile
+      // page (Part 9.3).
+      const env = getEnv();
+      const firstName = outcome.collegeUser.name?.split(" ")[0] || "there";
+      await sendAlumniActivationConfirmedEmail({
+        to: outcome.collegeUser.email,
+        firstName,
+        collegeName: outcome.tenant?.name ?? "your college",
+        profileUrl: `${env.WEB_APP_URL}/alumni/profile`,
         collegeAdminEmail: outcome.tenant?.contactEmail ?? null,
       });
     }

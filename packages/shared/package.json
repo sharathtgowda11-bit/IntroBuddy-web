@@ -7,7 +7,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/permissions.test.ts"
+    "test": "node --import tsx --test src/permissions.test.ts src/schemas/alumni.test.ts"
   },
   "dependencies": {
     "zod": "^3.24.1"

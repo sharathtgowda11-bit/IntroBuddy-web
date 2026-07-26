@@ -1,4 +1,6 @@
 import express, { type Express } from "express";
+import { alumniRouter } from "./routes/alumni.js";
+import { alumniDirectoryRouter } from "./routes/alumniDirectory.js";
 import { auditLogRouter } from "./routes/auditLog.js";
 import { authRouter } from "./routes/auth.js";
 import { collegesRouter } from "./routes/colleges.js";
@@ -9,6 +11,8 @@ import { healthRouter } from "./routes/health.js";
 import { importJobsRouter } from "./routes/importJobs.js";
 import { invitationsRouter } from "./routes/invitations.js";
 import { meRouter } from "./routes/me.js";
+import { opportunitiesRouter } from "./routes/opportunities.js";
+import { requestsRouter } from "./routes/requests.js";
 import { studentsRouter } from "./routes/students.js";
 
 export function createApp(): Express {
@@ -23,6 +27,10 @@ export function createApp(): Express {
   app.use("/import-jobs", importJobsRouter);
   app.use("/me", meRouter);
   app.use("/students", studentsRouter);
+  app.use("/alumni", alumniRouter);
+  app.use("/alumni-directory", alumniDirectoryRouter);
+  app.use("/opportunities", opportunitiesRouter);
+  app.use("/requests", requestsRouter);
   app.use("/dashboard", dashboardRouter);
   app.use("/audit-log", auditLogRouter);
   return app;

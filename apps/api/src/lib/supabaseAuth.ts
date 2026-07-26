@@ -44,5 +44,19 @@ export async function setPassword(userId: string, password: string): Promise<voi
 export async function verifyPassword(email: string, password: string): Promise<boolean> {
   const anon = getAnonClient();
   const { error } = await anon.auth.signInWithPassword({ email, password });
+  if (error && error.status !== 400) {
+    // GoTrue returns 400/"invalid_credentials" for a genuine wrong password --
+    // anything else (5xx, network failure, DB connection exhaustion under
+    // load, etc.) is an infra failure that happens to look identical to a
+    // wrong password from the caller's perspective (login's genericFailure()
+    // still returns the same 401, preserving enumeration resistance). Log it
+    // distinctly so this class of failure is diagnosable instead of being
+    // silently indistinguishable from real "wrong password" attempts.
+    console.error("verifyPassword: non-credentials error from GoTrue", {
+      status: error.status,
+      code: error.code,
+      message: error.message,
+    });
+  }
   return !error;
 }

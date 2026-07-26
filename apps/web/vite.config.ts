@@ -31,6 +31,11 @@ export default defineConfig({
         "/students",
         "/dashboard",
         "/audit-log",
+        // Phase 2 (Alumni Module)
+        "/alumni",
+        "/alumni-directory",
+        "/opportunities",
+        "/requests",
       ].map((prefix) => [prefix, { target: "http://127.0.0.1:3001", changeOrigin: true }]),
     ),
   },

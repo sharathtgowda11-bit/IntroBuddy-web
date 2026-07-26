@@ -1,5 +1,5 @@
-import { listExistingStudentIdentifiers } from "@introbuddy/invitations";
-import type { DepartmentMatch, ValidationContext } from "@introbuddy/import";
+import { listExistingCollegeUserEmailsByRole, listExistingStudentIdentifiers } from "@introbuddy/invitations";
+import type { AlumniValidationContext, DepartmentMatch, ValidationContext } from "@introbuddy/import";
 import type { PoolClient } from "pg";
 
 /**
@@ -13,11 +13,47 @@ import type { PoolClient } from "pg";
  */
 async function listDepartmentsWithDegree(
   client: PoolClient,
-): Promise<{ id: string; degreeId: string; name: string }[]> {
-  const result = await client.query<{ id: string; degree_id: string; name: string }>(
-    `select id, degree_id, name from public.departments`,
+): Promise<{ id: string; degreeId: string; name: string; degreeName: string }[]> {
+  const result = await client.query<{ id: string; degree_id: string; name: string; degree_name: string }>(
+    `select d.id, d.degree_id, d.name, deg.name as degree_name
+     from public.departments d
+     join public.degrees deg on deg.id = d.degree_id`,
   );
-  return result.rows.map((row) => ({ id: row.id, degreeId: row.degree_id, name: row.name }));
+  return result.rows.map((row) => ({
+    id: row.id,
+    degreeId: row.degree_id,
+    name: row.name,
+    degreeName: row.degree_name,
+  }));
+}
+
+/**
+ * A tenant may legitimately have two departments with the same name under
+ * different degrees (the DB's own uniqueness constraint is
+ * (tenant_id, degree_id, lower(name)), not name alone) -- so each name maps
+ * to every department that shares it, not a single overwritten entry.
+ * resolveDepartmentMatch (packages/import) disambiguates using the row's own
+ * degree column when there's more than one candidate.
+ */
+function groupDepartmentsByName(
+  departments: { id: string; degreeId: string; name: string; degreeName: string }[],
+): Map<string, DepartmentMatch[]> {
+  const departmentsByName = new Map<string, DepartmentMatch[]>();
+  for (const department of departments) {
+    const key = department.name.trim().toLowerCase();
+    const match: DepartmentMatch = {
+      departmentId: department.id,
+      degreeId: department.degreeId,
+      degreeName: department.degreeName,
+    };
+    const existing = departmentsByName.get(key);
+    if (existing) {
+      existing.push(match);
+    } else {
+      departmentsByName.set(key, [match]);
+    }
+  }
+  return departmentsByName;
 }
 
 /**
@@ -36,18 +72,32 @@ export async function buildValidationContext(
     listExistingStudentIdentifiers(client),
   ]);
 
-  const departmentsByName = new Map<string, DepartmentMatch>();
-  for (const department of departments) {
-    departmentsByName.set(department.name.trim().toLowerCase(), {
-      departmentId: department.id,
-      degreeId: department.degreeId,
-    });
-  }
-
   return {
     currentYear,
     existingUsns: identifiers.usns,
     existingEmails: identifiers.emails,
-    departmentsByName,
+    departmentsByName: groupDepartmentsByName(departments),
+  };
+}
+
+/**
+ * Phase 2 counterpart to buildValidationContext, for alumni rows. Same
+ * "fresh on every call" contract, called by both the synchronous
+ * /validate route and the worker's chunked commit job.
+ */
+export async function buildAlumniValidationContext(
+  client: PoolClient,
+  currentYear: number = new Date().getFullYear(),
+): Promise<AlumniValidationContext> {
+  const [departments, emailsByRole] = await Promise.all([
+    listDepartmentsWithDegree(client),
+    listExistingCollegeUserEmailsByRole(client),
+  ]);
+
+  return {
+    currentYear,
+    existingAlumniEmails: emailsByRole.alumniEmails,
+    existingNonAlumniEmails: emailsByRole.nonAlumniEmails,
+    departmentsByName: groupDepartmentsByName(departments),
   };
 }

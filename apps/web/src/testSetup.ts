@@ -9,3 +9,11 @@ class ResizeObserverStub {
 }
 
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
+
+// jsdom doesn't implement URL.createObjectURL/revokeObjectURL; components that
+// preview a selected file (e.g. CollegeProfile's logo/banner) call them, so
+// tests need harmless stand-ins.
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:mock";
+  URL.revokeObjectURL = () => {};
+}

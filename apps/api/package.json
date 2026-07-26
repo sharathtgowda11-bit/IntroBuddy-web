@@ -9,7 +9,7 @@
     "dev": "node --import tsx --watch src/server.ts",
     "start": "node dist/server.js",
     "bootstrap:super-admin": "node --import tsx --import ./src/loadEnv.ts src/scripts/bootstrapSuperAdmin.ts",
-    "test": "node --import tsx --import ./src/loadEnv.ts --test src/app.test.ts src/lib/imageProcessing.test.ts src/routes/auth.e2e.test.ts src/routes/colleges.e2e.test.ts src/routes/importJobs.e2e.test.ts src/routes/me.e2e.test.ts src/routes/students.e2e.test.ts"
+    "test": "node --import tsx --import ./src/loadEnv.ts --test src/app.test.ts src/lib/imageProcessing.test.ts src/routes/auth.e2e.test.ts src/routes/colleges.e2e.test.ts src/routes/importJobs.e2e.test.ts src/routes/me.e2e.test.ts src/routes/students.e2e.test.ts src/routes/alumniModule.e2e.test.ts"
   },
   "dependencies": {
     "@introbuddy/db": "*",

@@ -152,6 +152,17 @@ public = false
 file_size_limit = "10MiB"
 allowed_mime_types = ["image/jpeg", "application/pdf"]
 
+# Alumni profile pictures (Phase 2). Private -- signed URLs only, same
+# pattern as student-media. Object paths: {tenantId}/{collegeUserId}/avatar.jpg.
+# Avatar-only: alumni_profiles has no resume field, so no PDF handling is
+# needed here, unlike student-media. Avatars are always re-encoded to JPEG
+# server-side (apps/api/src/lib/imageProcessing.ts) before upload, same
+# EXIF-stripping pipeline as every other image in this system.
+[storage.buckets.alumni-media]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["image/jpeg"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

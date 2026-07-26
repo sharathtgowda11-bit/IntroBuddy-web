@@ -1,10 +1,14 @@
 import { z } from "zod";
 
 export const CollegeCreateSchema = z.object({
-  name: z.string().min(1),
-  state: z.string().min(1),
-  city: z.string().min(1),
-  adminName: z.string().min(1),
+  // .trim() before .min(1): a name/state/city/adminName made only of
+  // whitespace must fail validation rather than being stored verbatim --
+  // it would otherwise pass min(1) and leak stray leading/trailing
+  // whitespace into user-facing copy (activation emails, dashboards, etc.).
+  name: z.string().trim().min(1),
+  state: z.string().trim().min(1),
+  city: z.string().trim().min(1),
+  adminName: z.string().trim().min(1),
   adminEmail: z.string().email(),
 });
 export type CollegeCreateInput = z.infer<typeof CollegeCreateSchema>;

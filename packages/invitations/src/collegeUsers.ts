@@ -135,6 +135,32 @@ export async function updateCollegeUserAcademicFields(
   );
 }
 
+/**
+ * Alumni counterpart to updateCollegeUserAcademicFields, for the Phase 2
+ * commit path's "update" outcome (matched by email, since alumni have no
+ * USN). Unlike the student version, every academic field is optional and
+ * coalesced -- a re-imported row that omits department/graduation year
+ * must not blindly null out a value set by an earlier import (degree/
+ * department/graduation year are optional for alumni, per the settled
+ * design decision).
+ */
+export async function updateAlumniAcademicFields(
+  client: PoolClient,
+  collegeUserId: string,
+  params: { name?: string | null; degreeId?: string | null; departmentId?: string | null; graduationYear?: number | null },
+): Promise<void> {
+  await client.query(
+    `update public.college_users
+     set name = coalesce($2, name),
+         degree_id = coalesce($3, degree_id),
+         department_id = coalesce($4, department_id),
+         graduation_year = coalesce($5, graduation_year),
+         updated_at = now()
+     where id = $1`,
+    [collegeUserId, params.name ?? null, params.degreeId ?? null, params.departmentId ?? null, params.graduationYear ?? null],
+  );
+}
+
 export async function markCollegeUserActive(client: PoolClient, collegeUserId: string): Promise<void> {
   await client.query(`update public.college_users set status = 'active', updated_at = now() where id = $1`, [
     collegeUserId,
@@ -159,6 +185,32 @@ export async function listExistingStudentIdentifiers(
     emails.add(row.email.toLowerCase());
   }
   return { usns, emails };
+}
+
+/**
+ * Reference data for Phase 2 alumni bulk-import validation
+ * (packages/import's AlumniValidationContext). Alumni have no natural
+ * per-row identifier the way students have USN, so email plays that role
+ * instead: a row matching an existing alumnus's email means "update this
+ * alumnus", while a match against any *other* role's email is a genuine
+ * identity collision -- email is unique per tenant across every role, via
+ * college_users_tenant_email_idx -- and must be rejected, never silently
+ * overwritten.
+ */
+export async function listExistingCollegeUserEmailsByRole(
+  client: PoolClient,
+): Promise<{ alumniEmails: Set<string>; nonAlumniEmails: Set<string> }> {
+  const result = await client.query<{ email: string; role: string }>(`select email, role from public.college_users`);
+  const alumniEmails = new Set<string>();
+  const nonAlumniEmails = new Set<string>();
+  for (const row of result.rows) {
+    if (row.role === "alumni") {
+      alumniEmails.add(row.email.toLowerCase());
+    } else {
+      nonAlumniEmails.add(row.email.toLowerCase());
+    }
+  }
+  return { alumniEmails, nonAlumniEmails };
 }
 
 /**

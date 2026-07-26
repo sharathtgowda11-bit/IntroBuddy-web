@@ -17,6 +17,7 @@ export {
   setImportJobValidationResult,
   setImportJobPhase,
   type ImportJobPhase,
+  type ImportTargetRole,
   type ImportJobRecord,
   type CreateImportJobParams,
   type ImportJobValidationResult,
@@ -25,4 +26,4 @@ export {
 export { replaceImportErrors, listImportErrors, type ImportErrorRecord } from "./importErrors.js";
 export { getImportMappingPreset, upsertImportMappingPreset } from "./importMappingPresets.js";
 export { uploadImportFile, downloadImportFile } from "./importStorage.js";
-export { buildValidationContext } from "./buildValidationContext.js";
+export { buildValidationContext, buildAlumniValidationContext } from "./buildValidationContext.js";

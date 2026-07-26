@@ -38,7 +38,7 @@ export async function createFixtureIdentity(superuser: Client, email: string): P
 
 export interface FixtureCollegeUser {
   tenantId: string;
-  role?: "super_admin" | "college_admin" | "student";
+  role?: "super_admin" | "college_admin" | "student" | "alumni";
   status?: "invited" | "active" | "deactivated";
   usn?: string;
   name?: string;
@@ -79,6 +79,27 @@ export async function createFixtureDepartment(
     [tenantId, degreeId, name],
   );
   return { degreeId, departmentId: departmentResult.rows[0].id, name };
+}
+
+export interface FixtureOpportunity {
+  tenantId: string;
+  postedByCollegeUserId: string;
+  type?: "job" | "internship" | "referral";
+  title?: string;
+}
+
+/** Phase 2: a fixture opportunity row, for tests exercising requests.opportunity_id's composite FK. */
+export async function createFixtureOpportunity(
+  superuser: Client,
+  { tenantId, postedByCollegeUserId, type = "referral", title }: FixtureOpportunity,
+): Promise<{ id: string }> {
+  const result = await superuser.query<{ id: string }>(
+    `insert into public.opportunities (tenant_id, posted_by_college_user_id, type, title)
+     values ($1, $2, $3, $4)
+     returning id`,
+    [tenantId, postedByCollegeUserId, type, title ?? `Fixture opportunity ${uniqueSuffix()}`],
+  );
+  return { id: result.rows[0].id };
 }
 
 /** A fixture-only stand-in for a real hashed token; the real hashing lives in apps/api's token utilities. */

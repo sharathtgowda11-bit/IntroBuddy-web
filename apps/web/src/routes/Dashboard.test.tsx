@@ -42,12 +42,39 @@ describe("Dashboard", () => {
       invitedCount: 10,
       deactivatedCount: 2,
       profileCompleteCount: 15,
+      totalAlumni: 8,
+      activeAlumniCount: 5,
+      invitedAlumniCount: 3,
+      deactivatedAlumniCount: 0,
+      alumniProfileCompleteCount: 4,
+      alumniByCompany: [{ company: "Acme Corp", count: 3 }],
     });
     render(<Dashboard />);
 
     expect(await screen.findByText("42")).toBeInTheDocument();
     expect(screen.getByText("30")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("8")).toBeInTheDocument();
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     expect(apiGet).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows an empty state when no alumni have added a company yet", async () => {
+    vi.mocked(apiGet).mockResolvedValue({
+      totalStudents: 0,
+      activeCount: 0,
+      invitedCount: 0,
+      deactivatedCount: 0,
+      profileCompleteCount: 0,
+      totalAlumni: 0,
+      activeAlumniCount: 0,
+      invitedAlumniCount: 0,
+      deactivatedAlumniCount: 0,
+      alumniProfileCompleteCount: 0,
+      alumniByCompany: [],
+    });
+    render(<Dashboard />);
+
+    expect(await screen.findByText(/no alumni have added a company yet/i)).toBeInTheDocument();
   });
 });

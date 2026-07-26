@@ -16,5 +16,8 @@ export function Home() {
   if (session?.role === "college_admin") {
     return <Navigate to="/college/dashboard" replace />;
   }
+  if (session?.role === "alumni") {
+    return <Navigate to="/alumni/dashboard" replace />;
+  }
   return <Navigate to="/profile" replace />;
 }

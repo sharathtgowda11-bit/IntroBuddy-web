@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { validateImportRows, type MappedStudentRow, type ValidationContext } from "./validateRows.js";
 
-const CSE_DEPARTMENT = { departmentId: "dept-cse", degreeId: "degree-btech" };
+const CSE_DEPARTMENT = { departmentId: "dept-cse", degreeId: "degree-btech", degreeName: "B.Tech" };
 
 function baseContext(overrides: Partial<ValidationContext> = {}): ValidationContext {
   return {
     currentYear: 2026,
     existingUsns: new Set(),
     existingEmails: new Set(),
-    departmentsByName: new Map([["computer science", CSE_DEPARTMENT]]),
+    departmentsByName: new Map([["computer science", [CSE_DEPARTMENT]]]),
     ...overrides,
   };
 }
@@ -86,6 +86,43 @@ test("a department not in this tenant's hierarchy is rejected", () => {
   assert.equal(outcome.outcome, "reject");
   if (outcome.outcome === "reject") {
     assert.ok(outcome.reasons.some((r) => r.includes("not found in this college's hierarchy")));
+  }
+});
+
+// Regression: a tenant may legitimately have two departments with the same
+// name under different degrees (e.g. "Computer Science and Engineering"
+// under both B.Tech and M.Tech -- the DB's own uniqueness constraint is
+// (tenant_id, degree_id, lower(name)), not name alone). Silently picking
+// whichever one happened to be inserted into the lookup map last would
+// misassign a row's degree/department without ever surfacing an error.
+const BTECH_CSE = { departmentId: "dept-cse-btech", degreeId: "degree-btech", degreeName: "B.Tech" };
+const MTECH_CSE = { departmentId: "dept-cse-mtech", degreeId: "degree-mtech", degreeName: "M.Tech" };
+function ambiguousContext(): ValidationContext {
+  return baseContext({ departmentsByName: new Map([["computer science", [BTECH_CSE, MTECH_CSE]]]) });
+}
+
+test("a department name shared by two degrees resolves correctly when the row's degree column disambiguates it", () => {
+  const [outcome] = validateImportRows([validRow({ degreeName: "M.Tech" })], ambiguousContext());
+  assert.equal(outcome.outcome, "create");
+  if (outcome.outcome === "create") {
+    assert.equal(outcome.data.departmentId, MTECH_CSE.departmentId);
+    assert.equal(outcome.data.degreeId, MTECH_CSE.degreeId);
+  }
+});
+
+test("a department name shared by two degrees is rejected -- not silently misassigned -- when no degree column disambiguates it", () => {
+  const [outcome] = validateImportRows([validRow()], ambiguousContext());
+  assert.equal(outcome.outcome, "reject");
+  if (outcome.outcome === "reject") {
+    assert.ok(outcome.reasons.some((r) => r.includes("more than one degree")));
+  }
+});
+
+test("a department name shared by two degrees is rejected when the given degree doesn't match either", () => {
+  const [outcome] = validateImportRows([validRow({ degreeName: "MBA" })], ambiguousContext());
+  assert.equal(outcome.outcome, "reject");
+  if (outcome.outcome === "reject") {
+    assert.ok(outcome.reasons.some((r) => r.includes("not found under degree")));
   }
 });
 

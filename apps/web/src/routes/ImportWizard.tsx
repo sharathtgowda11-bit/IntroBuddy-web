@@ -1,4 +1,4 @@
-import { PERMISSIONS, type ColumnMappingInput } from "@introbuddy/shared";
+import { PERMISSIONS } from "@introbuddy/shared";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../components/ui/button.js";
@@ -10,11 +10,14 @@ import { useSession } from "../context/sessionContext.js";
 import { apiGet, apiPatch, apiPost, apiPostMultipart, ApiError } from "../lib/apiClient.js";
 
 type ImportJobPhase = "uploaded" | "mapped" | "validated" | "committing" | "committed" | "failed";
+type MappingField = "name" | "usn" | "email" | "company" | "degree" | "department" | "graduationYear";
+type MappingDraft = Partial<Record<MappingField, string>>;
+export type ImportTargetRole = "student" | "alumni";
 
 interface ImportJobState {
   id: string;
   phase: ImportJobPhase;
-  columnMapping: ColumnMappingInput;
+  columnMapping: MappingDraft;
   // Only ever populated from the upload response -- GET /import-jobs/:id
   // doesn't return the file's headers, so a page reload while still in
   // the "uploaded" (mapping) phase can't re-render the mapping selects.
@@ -32,7 +35,7 @@ interface UploadResponse extends ImportJobState {
   headers: string[];
 }
 
-const TARGET_FIELDS: { field: keyof ColumnMappingInput; label: string }[] = [
+const STUDENT_TARGET_FIELDS: { field: MappingField; label: string }[] = [
   { field: "name", label: "Name" },
   { field: "usn", label: "USN" },
   { field: "email", label: "Email" },
@@ -41,16 +44,42 @@ const TARGET_FIELDS: { field: keyof ColumnMappingInput; label: string }[] = [
   { field: "graduationYear", label: "Graduation year" },
 ];
 
+// Phase 2: no USN (alumni have none), plus a company column -- required
+// for the import to validate and shown in the review step, but never
+// persisted after commit (the alumnus's own Company field is entered
+// later, at profile Step 3).
+const ALUMNI_TARGET_FIELDS: { field: MappingField; label: string }[] = [
+  { field: "name", label: "Name" },
+  { field: "email", label: "Email" },
+  { field: "company", label: "Company (at time of import)" },
+  { field: "degree", label: "Degree" },
+  { field: "department", label: "Department" },
+  { field: "graduationYear", label: "Graduation year" },
+];
+
 const POLL_INTERVAL_MS = 2500;
 
-export function ImportWizard() {
+/**
+ * Handles both the student and alumni bulk-import wizards -- same
+ * six-phase UI, parametrized by targetRole rather than duplicated. The
+ * two mounting routes (/college/import(/:jobId) and
+ * /college/import-alumni(/:jobId)) each pass a fixed targetRole prop.
+ */
+export function ImportWizard({ targetRole = "student" }: { targetRole?: ImportTargetRole }) {
   const { can } = useSession();
   const { jobId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Navigating from the upload step to /college/import/:jobId remounts
-  // this component (react-router renders a different <Route>), so the
+  const isAlumni = targetRole === "alumni";
+  const basePath = isAlumni ? "/college/import-alumni" : "/college/import";
+  const targetFields = isAlumni ? ALUMNI_TARGET_FIELDS : STUDENT_TARGET_FIELDS;
+  const permission = isAlumni ? PERMISSIONS.ALUMNI_IMPORT : PERMISSIONS.STUDENT_IMPORT;
+  const entityPlural = isAlumni ? "alumni" : "students";
+  const entityLabel = isAlumni ? "Alumni" : "Student";
+
+  // Navigating from the upload step to :basePath/:jobId remounts this
+  // component (react-router renders a different <Route>), so the
   // freshly-uploaded job -- including the file `headers` that GET
   // /import-jobs/:id doesn't return -- is carried across via navigation
   // state rather than being lost.
@@ -61,7 +90,7 @@ export function ImportWizard() {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [mappingDraft, setMappingDraft] = useState<ColumnMappingInput>({});
+  const [mappingDraft, setMappingDraft] = useState<MappingDraft>({});
   const [inviteRetryCount, setInviteRetryCount] = useState<number | null>(null);
   const [inviteConfirmation, setInviteConfirmation] = useState<string | null>(null);
   const mappingSyncedForJobId = useRef<string | null>(null);
@@ -97,7 +126,7 @@ export function ImportWizard() {
     return () => clearInterval(interval);
   }, [committingJobId]);
 
-  if (!can(PERMISSIONS.STUDENT_IMPORT)) {
+  if (!can(permission)) {
     return <p className="text-muted-foreground">You don't have access to this page.</p>;
   }
 
@@ -109,6 +138,7 @@ export function ImportWizard() {
     }
     const formData = new FormData();
     formData.append("file", uploadFile);
+    formData.append("targetRole", targetRole);
 
     setIsBusy(true);
     try {
@@ -118,7 +148,7 @@ export function ImportWizard() {
       // in-memory state) -- either way `job` survives the route change with
       // its `headers`, which GET /import-jobs/:id can't re-supply.
       setJob(response);
-      navigate(`/college/import/${response.id}`, { replace: true, state: { job: response } });
+      navigate(`${basePath}/${response.id}`, { replace: true, state: { job: response } });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -228,7 +258,7 @@ export function ImportWizard() {
     setLoadError(null);
     setInviteConfirmation(null);
     setInviteRetryCount(null);
-    navigate("/college/import", { replace: true });
+    navigate(basePath, { replace: true });
   }
 
   if (jobId && loadError) {
@@ -252,8 +282,8 @@ export function ImportWizard() {
     return (
       <Card className="max-w-lg">
         <CardHeader>
-          <CardTitle>Import students</CardTitle>
-          <CardDescription>Upload a .csv or .xlsx roster to bulk-invite students.</CardDescription>
+          <CardTitle>Import {entityPlural}</CardTitle>
+          <CardDescription>Upload a .csv or .xlsx roster to bulk-invite {entityPlural}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -298,7 +328,7 @@ export function ImportWizard() {
           <CardDescription>Match each field to a column from your file.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {TARGET_FIELDS.map(({ field, label }) => (
+          {targetFields.map(({ field, label }) => (
             <div key={field} className="space-y-2">
               <Label htmlFor={field}>{label}</Label>
               <Select
@@ -329,7 +359,10 @@ export function ImportWizard() {
       <Card className="max-w-lg">
         <CardHeader>
           <CardTitle>Validate</CardTitle>
-          <CardDescription>Check every row against your college's students and department list.</CardDescription>
+          <CardDescription>
+            Check every row against your college's {entityPlural}
+            {isAlumni ? "" : " and department list"}.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -352,8 +385,8 @@ export function ImportWizard() {
           <ul className="text-sm text-muted-foreground space-y-1">
             <li>Valid: {job.validCount}</li>
             <li>Invalid: {job.invalidCount}</li>
-            <li>New students: {job.createCount}</li>
-            <li>Updated students: {job.updateCount}</li>
+            <li>New {entityPlural}: {job.createCount}</li>
+            <li>Updated {entityPlural}: {job.updateCount}</li>
           </ul>
           {!!job.invalidCount && (
             <Button variant="outline" onClick={handleDownloadErrors}>
@@ -373,7 +406,7 @@ export function ImportWizard() {
     return (
       <Card className="max-w-lg">
         <CardHeader>
-          <CardTitle>Creating student accounts…</CardTitle>
+          <CardTitle>Creating {entityLabel.toLowerCase()} accounts…</CardTitle>
           <CardDescription>This can take a moment for large files.</CardDescription>
         </CardHeader>
       </Card>
@@ -385,7 +418,7 @@ export function ImportWizard() {
       <Card className="max-w-lg">
         <CardHeader>
           <CardTitle>Accounts created</CardTitle>
-          <CardDescription>{job.committedRowCount} student accounts were created or updated.</CardDescription>
+          <CardDescription>{job.committedRowCount} {entityLabel.toLowerCase()} accounts were created or updated.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {inviteConfirmation ? (

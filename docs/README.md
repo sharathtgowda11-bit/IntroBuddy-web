@@ -18,6 +18,7 @@ alumni module itself is Phase 2.
 | **[database.md](database.md)** | Full database reference: every table (purpose, columns, constraints, FKs, indexes, relationships, RLS, usage, example), the ER diagram, and all SQL / `SECURITY DEFINER` functions. |
 | **[workflows.md](workflows.md)** | Step-by-step workflows with Mermaid sequence diagrams for Super Admin, College Admin, Student, the Background Worker, and both dashboards. |
 | **[security.md](security.md)** | Security model: multi-tenancy, RLS, `SECURITY DEFINER` functions, password/identity, HIBP, rate limiting, sessions, audit logging, and the authorization/permission matrix. |
+| **[production-readiness-plan.md](production-readiness-plan.md)** | Production deployment plan: hosting, database, auth, email, storage, DNS/CDN/SSL, monitoring, logging, analytics, error tracking, background jobs, backups, security, rate limiting, secrets, CI/CD, compliance, cost estimates (MVP vs. scale), and the exact-order deployment checklist. |
 | **[adr/](adr/README.md)** | Architecture Decision Records — the index plus per-ADR summaries (decision, why, alternatives, why chosen), each linking to the full record. |
 
 ## The system in one screen

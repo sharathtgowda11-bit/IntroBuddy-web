@@ -4,13 +4,18 @@ import { countPendingInvitationsForImportJob } from "@introbuddy/invitations";
 import {
   detectImportFileKind,
   errorsToCsv,
+  guessAlumniColumnMapping,
   guessColumnMapping,
   parseImportFile,
+  toMappedAlumniRows,
   toMappedStudentRows,
+  validateAlumniRows,
   validateImportRows,
+  type AlumniColumnMapping,
   type ColumnMapping,
 } from "@introbuddy/import";
 import {
+  buildAlumniValidationContext,
   buildValidationContext,
   createImportJob,
   downloadImportFile,
@@ -24,8 +29,15 @@ import {
   setImportJobValidationResult,
   uploadImportFile,
   upsertImportMappingPreset,
+  type ImportTargetRole,
 } from "@introbuddy/jobs";
-import { ImportMappingUpdateSchema, ImportSendInvitationsSchema, PERMISSIONS } from "@introbuddy/shared";
+import {
+  AlumniImportMappingUpdateSchema,
+  ImportMappingUpdateSchema,
+  ImportSendInvitationsSchema,
+  PERMISSIONS,
+  hasPermission,
+} from "@introbuddy/shared";
 import { Router } from "express";
 import multer from "multer";
 import { requirePermission } from "../middleware/requirePermission.js";
@@ -38,111 +50,142 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // matches supabase/config.toml's college-imports bucket
 });
 
-/** Preset values only apply if the column name still exists in this file -- otherwise the fresh guess wins. */
-function mergeColumnMapping(preset: ColumnMapping | null, guessed: ColumnMapping, headers: string[]): ColumnMapping {
-  const merged: ColumnMapping = { ...guessed };
+/** Preset values only apply if the column name still exists in this file -- otherwise the fresh guess wins. Generic over student/alumni column mapping shapes, both Partial<Record<field, string>>. */
+function mergeColumnMapping<T extends Record<string, string | undefined>>(preset: T | null, guessed: T, headers: string[]): T {
+  const merged: T = { ...guessed };
   if (preset) {
-    for (const [field, column] of Object.entries(preset) as [keyof ColumnMapping, string][]) {
+    for (const [field, column] of Object.entries(preset) as [keyof T, string][]) {
       if (column && headers.includes(column)) {
-        merged[field] = column;
+        merged[field] = column as T[keyof T];
       }
     }
   }
   return merged;
 }
 
-importJobsRouter.post(
-  "/",
-  resolveSession(),
-  requirePermission(PERMISSIONS.STUDENT_IMPORT),
-  upload.single("file"),
-  async (req, res) => {
-    const file = req.file;
-    if (!file) {
-      res.status(400).json({ error: "file is required" });
-      return;
-    }
-    const kind = detectImportFileKind(file.originalname);
-    if (!kind) {
-      res.status(400).json({ error: "file must be .csv or .xlsx" });
-      return;
-    }
+// requirePermission can't be static middleware here: which permission
+// applies depends on targetRole, a body field that multer (upload.single)
+// must parse first -- so upload runs before this handler checks
+// permission manually, rather than before a requirePermission(...)
+// middleware that would run too early to see req.body.targetRole.
+importJobsRouter.post("/", resolveSession(), upload.single("file"), async (req, res) => {
+  const session = req.session;
+  if (!session) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
 
-    const session = req.session!;
-    const pool = getPool();
-    const importJobId = randomUUID();
-    const fileSha256 = createHash("sha256").update(file.buffer).digest("hex");
+  // Defaults to 'student' for backward compatibility with the existing
+  // student-import UI, which never sends this field.
+  const targetRole: ImportTargetRole = req.body.targetRole === "alumni" ? "alumni" : "student";
+  const requiredPermission = targetRole === "alumni" ? PERMISSIONS.ALUMNI_IMPORT : PERMISSIONS.STUDENT_IMPORT;
+  if (!hasPermission(session.role, requiredPermission)) {
+    res.status(403).json({ error: "forbidden" });
+    return;
+  }
 
-    try {
-      const { headers, rows } = await parseImportFile(file.buffer, kind);
-      const filePath = await uploadImportFile(session.tenantId, importJobId, file.buffer, file.mimetype, kind);
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: "file is required" });
+    return;
+  }
+  const kind = detectImportFileKind(file.originalname);
+  if (!kind) {
+    res.status(400).json({ error: "file must be .csv or .xlsx" });
+    return;
+  }
 
-      const { importJob, duplicateOfJobIds } = await withTenant(pool, session.tenantId, async (client) => {
-        const preset = await getImportMappingPreset(client);
-        const guessed = guessColumnMapping(headers);
-        const columnMapping = mergeColumnMapping(preset, guessed, headers);
+  const pool = getPool();
+  const importJobId = randomUUID();
+  const fileSha256 = createHash("sha256").update(file.buffer).digest("hex");
 
-        const created = await createImportJob(client, {
-          id: importJobId,
-          tenantId: session.tenantId,
-          createdByCollegeUserId: session.collegeUserId,
-          originalFilename: file.originalname,
-          filePath,
-          fileSha256,
-          columnMapping,
-        });
+  try {
+    const { headers, rows } = await parseImportFile(file.buffer, kind);
+    const filePath = await uploadImportFile(session.tenantId, importJobId, file.buffer, file.mimetype, kind);
 
-        // Informational only -- spec 8.3: a same-hash re-upload is never blocked.
-        const duplicates = (await findImportJobsByFileHash(client, fileSha256))
-          .filter((job) => job.id !== importJobId)
-          .map((job) => job.id);
+    const { importJob, duplicateOfJobIds } = await withTenant(pool, session.tenantId, async (client) => {
+      const preset = await getImportMappingPreset(client, targetRole);
+      const columnMapping =
+        targetRole === "alumni"
+          ? mergeColumnMapping<AlumniColumnMapping>(preset, guessAlumniColumnMapping(headers), headers)
+          : mergeColumnMapping<ColumnMapping>(preset, guessColumnMapping(headers), headers);
 
-        return { importJob: created, duplicateOfJobIds: duplicates };
+      const created = await createImportJob(client, {
+        id: importJobId,
+        tenantId: session.tenantId,
+        createdByCollegeUserId: session.collegeUserId,
+        originalFilename: file.originalname,
+        filePath,
+        fileSha256,
+        columnMapping,
+        targetRole,
       });
 
-      res.status(201).json({
-        id: importJob.id,
-        phase: importJob.phase,
-        columnMapping: importJob.columnMapping,
-        headers,
-        rowCount: rows.length,
-        duplicateOfJobIds,
-      });
-    } catch (error) {
-      console.error("failed to upload import file", error);
-      res.status(500).json({ error: "internal error" });
-    }
-  },
-);
+      // Informational only -- spec 8.3: a same-hash re-upload is never blocked.
+      const duplicates = (await findImportJobsByFileHash(client, fileSha256))
+        .filter((job) => job.id !== importJobId)
+        .map((job) => job.id);
 
+      return { importJob: created, duplicateOfJobIds: duplicates };
+    });
+
+    res.status(201).json({
+      id: importJob.id,
+      phase: importJob.phase,
+      targetRole: importJob.targetRole,
+      columnMapping: importJob.columnMapping,
+      headers,
+      rowCount: rows.length,
+      duplicateOfJobIds,
+    });
+  } catch (error) {
+    console.error("failed to upload import file", error);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+// A specific permission, or just a broad college_admin role check -- kept
+// gated on STUDENT_IMPORT unconditionally, matching the plan's own note
+// that this phase-transition endpoint "reads target_role from the
+// already-persisted import_jobs row rather than requiring it again": in
+// this codebase STUDENT_IMPORT and ALUMNI_IMPORT are always granted
+// together (only college_admin ever holds either), so gating uniformly
+// here restricts nothing incorrectly.
 importJobsRouter.patch(
   "/:id/mapping",
   resolveSession(),
   requirePermission(PERMISSIONS.STUDENT_IMPORT),
   async (req, res) => {
-    const parsed = ImportMappingUpdateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "invalid request", details: parsed.error.flatten() });
-      return;
-    }
-
     const id = req.params.id as string;
     const session = req.session!;
     const pool = getPool();
 
     try {
-      const updated = await withTenant(pool, session.tenantId, async (client) => {
+      const outcome = await withTenant(pool, session.tenantId, async (client) => {
         const importJob = await findImportJobById(client, id);
         if (!importJob) {
-          return null;
+          return { kind: "not_found" as const };
         }
+
+        // Which shape to validate against depends on the job's already-
+        // persisted target_role -- alumni imports have no usn and add company.
+        const schema = importJob.targetRole === "alumni" ? AlumniImportMappingUpdateSchema : ImportMappingUpdateSchema;
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          return { kind: "invalid" as const, details: parsed.error.flatten() };
+        }
+
         await setImportJobMapping(client, id, parsed.data.columnMapping);
-        await upsertImportMappingPreset(client, session.tenantId, parsed.data.columnMapping);
-        return true;
+        await upsertImportMappingPreset(client, session.tenantId, parsed.data.columnMapping, importJob.targetRole);
+        return { kind: "ok" as const };
       });
 
-      if (!updated) {
+      if (outcome.kind === "not_found") {
         res.status(404).json({ error: "import job not found" });
+        return;
+      }
+      if (outcome.kind === "invalid") {
+        res.status(400).json({ error: "invalid request", details: outcome.details });
         return;
       }
 
@@ -178,9 +221,40 @@ importJobsRouter.post(
 
       const buffer = await downloadImportFile(importJob.filePath);
       const { rows } = await parseImportFile(buffer, kind);
-      const mappedRows = toMappedStudentRows(rows, importJob.columnMapping);
 
       const summary = await withTenant(pool, session.tenantId, async (client) => {
+        if (importJob.targetRole === "alumni") {
+          const mappedRows = toMappedAlumniRows(rows, importJob.columnMapping as AlumniColumnMapping);
+          const context = await buildAlumniValidationContext(client);
+          const outcomes = validateAlumniRows(mappedRows, context);
+
+          const rejected = outcomes.filter((outcome) => outcome.outcome === "reject");
+          const createCount = outcomes.filter((outcome) => outcome.outcome === "create").length;
+          const updateCount = outcomes.filter((outcome) => outcome.outcome === "update").length;
+
+          await replaceImportErrors(
+            client,
+            session.tenantId,
+            id,
+            rejected.map((outcome) => ({
+              rowNumber: outcome.rowNumber,
+              rawRow: outcome.rawRow,
+              errorReason: outcome.reasons.join("; "),
+            })),
+          );
+
+          const result = {
+            rowCount: outcomes.length,
+            validCount: createCount + updateCount,
+            invalidCount: rejected.length,
+            createCount,
+            updateCount,
+          };
+          await setImportJobValidationResult(client, id, result);
+          return result;
+        }
+
+        const mappedRows = toMappedStudentRows(rows, importJob.columnMapping);
         const context = await buildValidationContext(client);
         const outcomes = validateImportRows(mappedRows, context);
 
@@ -232,6 +306,7 @@ importJobsRouter.get("/:id", resolveSession(), requirePermission(PERMISSIONS.STU
   res.status(200).json({
     id: importJob.id,
     phase: importJob.phase,
+    targetRole: importJob.targetRole,
     originalFilename: importJob.originalFilename,
     columnMapping: importJob.columnMapping,
     rowCount: importJob.rowCount,

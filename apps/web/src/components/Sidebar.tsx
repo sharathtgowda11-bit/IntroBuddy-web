@@ -6,25 +6,33 @@ import { Logo } from "./Logo.js";
 
 /**
  * Sidebar-specific display order by route -- deliberately different from
- * NAV_ACTIONS' declaration order, which drives Home's card grid. Covers
- * both roles that use the sidebar (super_admin and college_admin); each
- * only ever sees its own visible subset in this order. Routes not listed
- * fall to the end, preserving their NAV_ACTIONS order.
+ * NAV_ACTIONS' declaration order, which drives Home's card grid. Every
+ * role uses this same sidebar shell; each only ever sees its own visible
+ * subset in this order. Routes not listed fall to the end, preserving
+ * their NAV_ACTIONS order. Every role's Dashboard entry is grouped first.
  */
 const SIDEBAR_ORDER = [
-  // super_admin
+  // Dashboard first, every role
   "/admin/dashboard",
+  "/college/dashboard",
+  "/alumni/dashboard",
+  // super_admin
   "/admin/colleges/new",
   "/admin/colleges/reinvite",
   // college_admin
-  "/college/dashboard",
   "/college/students",
+  "/college/alumni",
   "/college/import",
+  "/college/import-alumni",
   "/college/invite-student",
   "/college/degrees",
   "/college/profile",
-  // shared
   "/college/audit-log",
+  // alumni
+  "/alumni/profile",
+  // student
+  "/alumni-directory",
+  "/requests",
   "/profile",
 ];
 
@@ -34,11 +42,10 @@ function sidebarRank(to: string): number {
 }
 
 /**
- * Persistent left-nav shell, used for super_admin and college_admin (the
- * student experience still uses AppShell's TopNav) -- see ProtectedShell.
- * Reuses NAV_ACTIONS, the same permission-gated action list Home's card
- * grid is built from, so there's one source of truth for "what can this
- * role reach."
+ * Persistent left-nav shell, used by every authenticated role -- see
+ * ProtectedShell. Reuses NAV_ACTIONS, the same permission-gated action
+ * list Home's card grid is built from, so there's one source of truth for
+ * "what can this role reach."
  */
 export function Sidebar() {
   const { session, can, logout } = useSession();

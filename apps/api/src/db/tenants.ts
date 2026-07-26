@@ -92,36 +92,51 @@ export async function findOrCreatePlatformTenant(pool: Pool): Promise<TenantReco
 export interface CollegeSummary extends TenantRecord {
   totalStudents: number;
   activeStudents: number;
+  totalAlumni: number;
+  activeAlumni: number;
 }
 
 interface CollegeSummaryRow extends TenantRow {
   total_students: number;
   active_students: number;
+  total_alumni: number;
+  active_alumni: number;
 }
 
 /**
  * Platform-wide, cross-tenant by design -- excludes the "platform"
  * sentinel tenant itself (super_admin's own anchor, not a real college).
- * Per-college student counts come from get_student_counts_by_tenant(),
- * the one SECURITY DEFINER escape hatch for this aggregate (college_users
- * is FORCE RLS, unlike tenants). Runs on the plain pool, same as every
- * other tenants query in this file.
+ * Phase 2: pivots get_college_user_counts_by_tenant()'s (tenant_id, role,
+ * total_count, active_count) rows into per-college student/alumni counts
+ * via conditional aggregation, rather than pivoting in JS.
+ * get_student_counts_by_tenant() is intentionally left in place, unused,
+ * rather than dropped -- the generalized function above supersedes it for
+ * this call site (Part 6/8.8 of the plan). Runs on the plain pool, same as
+ * every other tenants query in this file (college_users is FORCE RLS,
+ * unlike tenants -- SECURITY DEFINER is the one escape hatch for this
+ * cross-tenant aggregate).
  */
 export async function listCollegesWithStudentCounts(pool: Pool): Promise<CollegeSummary[]> {
   const result = await pool.query<CollegeSummaryRow>(`
     select t.id, t.slug, t.name, t.state, t.city, t.status, t.description, t.contact_email, t.contact_phone,
            t.logo_path, t.banner_path,
-           coalesce(sc.total_students, 0)::int as total_students,
-           coalesce(sc.active_students, 0)::int as active_students
+           coalesce(sum(cu.total_count) filter (where cu.role = 'student'), 0)::int as total_students,
+           coalesce(sum(cu.active_count) filter (where cu.role = 'student'), 0)::int as active_students,
+           coalesce(sum(cu.total_count) filter (where cu.role = 'alumni'), 0)::int as total_alumni,
+           coalesce(sum(cu.active_count) filter (where cu.role = 'alumni'), 0)::int as active_alumni
     from public.tenants t
-    left join public.get_student_counts_by_tenant() sc on sc.tenant_id = t.id
+    left join public.get_college_user_counts_by_tenant() cu on cu.tenant_id = t.id
     where t.slug != 'platform'
+    group by t.id, t.slug, t.name, t.state, t.city, t.status, t.description, t.contact_email, t.contact_phone,
+             t.logo_path, t.banner_path
     order by t.name
   `);
   return result.rows.map((row) => ({
     ...mapRow(row),
     totalStudents: row.total_students,
     activeStudents: row.active_students,
+    totalAlumni: row.total_alumni,
+    activeAlumni: row.active_alumni,
   }));
 }
 

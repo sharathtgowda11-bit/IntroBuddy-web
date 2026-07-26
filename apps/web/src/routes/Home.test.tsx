@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { Home } from "./Home.js";
 
-let session: { name: string | null; email: string; role: "super_admin" | "college_admin" | "student" } = {
+let session: { name: string | null; email: string; role: "super_admin" | "college_admin" | "student" | "alumni" } = {
   name: "Test User",
   email: "test@example.com",
   role: "college_admin",
@@ -56,5 +56,19 @@ describe("Home", () => {
     );
 
     expect(screen.getByText("Student profile page")).toBeInTheDocument();
+  });
+
+  it("redirects an alumnus straight to their dashboard", () => {
+    session = { name: "Ali Alum", email: "alum@example.com", role: "alumni" };
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/alumni/dashboard" element={<div>Alumni dashboard page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Alumni dashboard page")).toBeInTheDocument();
   });
 });

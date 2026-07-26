@@ -51,7 +51,7 @@ describe("CollegeProfile", () => {
     vi.mocked(apiGet).mockResolvedValue({ ...baseProfile, description: "A fine college." });
     render(<CollegeProfile />);
 
-    expect(await screen.findByText(/BIET \(biet\)/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "BIET" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("A fine college.")).toBeInTheDocument();
   });
 
@@ -61,9 +61,9 @@ describe("CollegeProfile", () => {
     const user = userEvent.setup();
     render(<CollegeProfile />);
 
-    await screen.findByText(/BIET \(biet\)/);
-    await user.type(screen.getByLabelText(/contact email/i), "admin@example.com");
-    await user.click(screen.getByRole("button", { name: /save profile/i }));
+    await screen.findByRole("heading", { name: "BIET" });
+    await user.type(screen.getByLabelText(/primary email address/i), "admin@example.com");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     expect(apiPatchMultipart).toHaveBeenCalledTimes(1);
     const formData = vi.mocked(apiPatchMultipart).mock.calls[0][1] as FormData;
@@ -78,10 +78,10 @@ describe("CollegeProfile", () => {
     const user = userEvent.setup();
     render(<CollegeProfile />);
 
-    await screen.findByText(/BIET \(biet\)/);
+    await screen.findByRole("heading", { name: "BIET" });
     const file = new File(["logo-bytes"], "logo.png", { type: "image/png" });
     await user.upload(screen.getByLabelText(/^logo$/i), file);
-    await user.click(screen.getByRole("button", { name: /save profile/i }));
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     const formData = vi.mocked(apiPatchMultipart).mock.calls[0][1] as FormData;
     expect(formData.get("logo")).toBe(file);

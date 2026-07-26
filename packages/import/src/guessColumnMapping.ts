@@ -35,3 +35,36 @@ export function guessColumnMapping(headers: string[]): ColumnMapping {
 
   return mapping;
 }
+
+// Phase 2: alumni import has a different column shape -- no usn (alumni
+// have none), plus a required "company at import" column that student
+// import doesn't have. Kept as a separate union/alias table rather than
+// folding into TargetField, since the two shapes genuinely diverge (see
+// packages/shared's AlumniCreateSchema/importAlumniRow settled decision).
+export type AlumniTargetField = "name" | "email" | "company" | "degree" | "department" | "graduationYear";
+
+const ALUMNI_FIELD_ALIASES: Record<AlumniTargetField, string[]> = {
+  name: ["name", "fullname", "alumnusname", "alumniname"],
+  email: ["email", "emailaddress", "mailid", "mail"],
+  company: ["company", "companyname", "employer", "organisation", "organization", "currentcompany"],
+  degree: ["degree", "course", "program", "programme"],
+  department: ["department", "dept", "branch", "specialization"],
+  graduationYear: ["graduationyear", "batch", "year", "passingyear", "gradyear", "yearofpassing"],
+};
+
+export type AlumniColumnMapping = Partial<Record<AlumniTargetField, string>>;
+
+/** Alumni counterpart to guessColumnMapping -- same header-guessing approach, different target fields. */
+export function guessAlumniColumnMapping(headers: string[]): AlumniColumnMapping {
+  const mapping: AlumniColumnMapping = {};
+  const normalizedHeaders = headers.map((header) => ({ original: header, normalized: normalizeHeader(header) }));
+
+  for (const [field, aliases] of Object.entries(ALUMNI_FIELD_ALIASES) as [AlumniTargetField, string[]][]) {
+    const match = normalizedHeaders.find((header) => aliases.includes(header.normalized));
+    if (match) {
+      mapping[field] = match.original;
+    }
+  }
+
+  return mapping;
+}

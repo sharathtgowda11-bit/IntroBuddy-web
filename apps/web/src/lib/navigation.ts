@@ -3,7 +3,9 @@ import { PERMISSIONS } from "@introbuddy/shared";
 import {
   BookOpen,
   Building2,
+  GraduationCap,
   History,
+  Inbox,
   LayoutDashboard,
   MailCheck,
   Settings2,
@@ -11,6 +13,7 @@ import {
   UserCircle,
   UserPlus,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,7 +47,7 @@ export const NAV_ACTIONS: NavAction[] = [
   {
     section: "College setup",
     icon: Settings2,
-    title: "Edit college profile",
+    title: "College profile",
     description: "Logo, banner, description, and contact details.",
     to: "/college/profile",
     visible: (can) => can(PERMISSIONS.COLLEGE_EDIT_PROFILE),
@@ -81,6 +84,23 @@ export const NAV_ACTIONS: NavAction[] = [
     to: "/college/students",
     visible: (can) => can(PERMISSIONS.STUDENT_EDIT_MANAGED_FIELDS),
   },
+  // Phase 2: college admins onboard and manage alumni exactly like students.
+  {
+    section: "Alumni",
+    icon: GraduationCap,
+    title: "Import alumni",
+    description: "Bulk-onboard alumni from a CSV or Excel file.",
+    to: "/college/import-alumni",
+    visible: (can) => can(PERMISSIONS.ALUMNI_IMPORT),
+  },
+  {
+    section: "Alumni",
+    icon: UsersRound,
+    title: "Manage alumni",
+    description: "Search, edit, deactivate, or reset a password.",
+    to: "/college/alumni",
+    visible: (can) => can(PERMISSIONS.ALUMNI_EDIT_MANAGED_FIELDS),
+  },
   {
     section: "Insights",
     icon: LayoutDashboard,
@@ -93,9 +113,21 @@ export const NAV_ACTIONS: NavAction[] = [
     section: "Insights",
     icon: LayoutDashboard,
     title: "Dashboard",
-    description: "Your college's student activity at a glance.",
+    description: "Your college's student and alumni activity at a glance.",
     to: "/college/dashboard",
     visible: (can, role) => role === "college_admin" && can(PERMISSIONS.DASHBOARD_VIEW),
+  },
+  // Phase 2: the alumni dashboard composes existing capabilities (own
+  // profile, own postings, own received requests) -- it's a page, not a
+  // permission, so gated on role plus one representative capability
+  // rather than a dedicated dashboard.view-style grant (see packages/shared).
+  {
+    section: "Insights",
+    icon: LayoutDashboard,
+    title: "Dashboard",
+    description: "Your postings, received requests, and profile at a glance.",
+    to: "/alumni/dashboard",
+    visible: (can, role) => role === "alumni" && can(PERMISSIONS.OPPORTUNITY_MANAGE),
   },
   {
     section: "Insights",
@@ -104,6 +136,23 @@ export const NAV_ACTIONS: NavAction[] = [
     description: "A record of administrative actions.",
     to: "/college/audit-log",
     visible: (can) => can(PERMISSIONS.AUDIT_LOG_VIEW),
+  },
+  // Phase 2: students browse verified alumni and track their own requests.
+  {
+    section: "Alumni network",
+    icon: GraduationCap,
+    title: "Alumni directory",
+    description: "Browse verified alumni for mentorship and referrals.",
+    to: "/alumni-directory",
+    visible: (can, role) => role === "student" && can(PERMISSIONS.ALUMNI_DIRECTORY_VIEW),
+  },
+  {
+    section: "Alumni network",
+    icon: Inbox,
+    title: "My requests",
+    description: "Track the mentorship and referral requests you've sent.",
+    to: "/requests",
+    visible: (can, role) => role === "student" && can(PERMISSIONS.REQUEST_SEND),
   },
   {
     section: "My account",
@@ -115,6 +164,14 @@ export const NAV_ACTIONS: NavAction[] = [
     // this is the student self-service profile (USN, batch, certifications),
     // which is meaningless for an admin -- so only surface it to students.
     visible: (can, role) => role === "student" && can(PERMISSIONS.PROFILE_EDIT_OWN),
+  },
+  {
+    section: "My account",
+    icon: UserCircle,
+    title: "My profile",
+    description: "Photo, graduation details, and professional info.",
+    to: "/alumni/profile",
+    visible: (can, role) => role === "alumni" && can(PERMISSIONS.PROFILE_EDIT_OWN),
   },
 ];
 

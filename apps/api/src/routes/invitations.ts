@@ -32,9 +32,10 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
     return;
   }
 
-  // Schema already guarantees these are present together for a student
-  // and absent otherwise (InvitationCreateSchema's superRefine).
-  if (role === "student" && graduationYear !== undefined) {
+  // Schema already guarantees these are present together for a student,
+  // optional for an alumnus, and absent for a college_admin
+  // (InvitationCreateSchema's superRefine).
+  if ((role === "student" || role === "alumni") && graduationYear !== undefined) {
     const { minYear, maxYear } = getGraduationYearBounds(new Date().getFullYear());
     if (graduationYear < minYear || graduationYear > maxYear) {
       res.status(400).json({ error: `graduation year out of plausible range (${minYear}-${maxYear})` });
@@ -49,7 +50,7 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
     const result = await withTenant(pool, session.tenantId, async (client) => {
       let degreeId: string | undefined;
       let departmentName: string | undefined;
-      if (role === "student" && departmentId !== undefined) {
+      if ((role === "student" || role === "alumni") && departmentId !== undefined) {
         // RLS scopes this lookup to the caller's own tenant, so a
         // cross-tenant departmentId is indistinguishable from a
         // nonexistent one -- no data leak, just "invalid department".
@@ -95,6 +96,10 @@ invitationsRouter.post("/", resolveSession(), async (req, res) => {
       student:
         role === "student"
           ? { name: null, usn: usn ?? null, departmentName: result.departmentName ?? null, graduationYear: graduationYear ?? null }
+          : undefined,
+      alumnus:
+        role === "alumni"
+          ? { name: null, departmentName: result.departmentName ?? null, graduationYear: graduationYear ?? null }
           : undefined,
     });
 

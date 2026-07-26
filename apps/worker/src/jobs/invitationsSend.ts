@@ -57,17 +57,27 @@ export async function processInvitationsSend(pool: Pool, job: JobRecord): Promis
         invitedByCollegeUserId: importJob.createdByCollegeUserId,
       });
       const activationUrl = `${env.WEB_APP_URL}/activate?token=${encodeCompoundToken(job.tenantId, rawToken)}`;
+      // Every candidate in this batch was created by the same import job,
+      // so the job's own target_role picks the template -- no per-row
+      // role lookup needed.
       await sendInvitationEmail({
         to: candidate.email,
         activationUrl,
-        role: "student",
+        role: importJob.targetRole,
         collegeName,
-        student: {
-          name: candidate.name,
-          usn: candidate.usn,
-          departmentName: candidate.departmentName,
-          graduationYear: candidate.graduationYear,
-        },
+        student:
+          importJob.targetRole === "student"
+            ? {
+                name: candidate.name,
+                usn: candidate.usn,
+                departmentName: candidate.departmentName,
+                graduationYear: candidate.graduationYear,
+              }
+            : undefined,
+        alumnus:
+          importJob.targetRole === "alumni"
+            ? { name: candidate.name, departmentName: candidate.departmentName, graduationYear: candidate.graduationYear }
+            : undefined,
       });
     });
   }
