@@ -1,13 +1,17 @@
 import { PERMISSIONS, type CollegeCreateInput } from "@introbuddy/shared";
 import { Check, CheckCircle2, Copy } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { PageHeader } from "../components/PageHeader.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent } from "../components/ui/card.js";
+import { Combobox, type ComboboxOption } from "../components/ui/combobox.js";
 import { Input } from "../components/ui/input.js";
 import { Label } from "../components/ui/label.js";
 import { useSession } from "../context/sessionContext.js";
+import { INDIA_STATES_AND_CITIES } from "../data/indiaStatesCities.js";
 import { apiPost, ApiError } from "../lib/apiClient.js";
+
+const STATE_OPTIONS: ComboboxOption[] = INDIA_STATES_AND_CITIES.map((s) => ({ value: s.name, label: s.name }));
 
 interface CreateCollegeResponse {
   id: string;
@@ -15,7 +19,7 @@ interface CreateCollegeResponse {
   status: string;
 }
 
-const emptyForm: CollegeCreateInput = { name: "", state: "", city: "", adminName: "", adminEmail: "" };
+const emptyForm: CollegeCreateInput = { name: "", shortName: "", state: "", city: "", adminName: "", adminEmail: "" };
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -65,12 +69,24 @@ export function CreateCollege() {
   const [created, setCreated] = useState<CreateCollegeResponse | null>(null);
   const [createdAdminEmail, setCreatedAdminEmail] = useState("");
 
+  const cityOptions: ComboboxOption[] = useMemo(() => {
+    const selected = INDIA_STATES_AND_CITIES.find((s) => s.name === form.state);
+    return selected ? selected.cities.map((city) => ({ value: city, label: city })) : [];
+  }, [form.state]);
+
   if (!can(PERMISSIONS.COLLEGE_CREATE)) {
     return <p className="text-muted-foreground">You don't have access to this page.</p>;
   }
 
   function updateField<K extends keyof CollegeCreateInput>(field: K, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleStateChange(state: string) {
+    // Changing (or clearing) the state invalidates whatever city was
+    // selected under the previous state -- never leave a stale city value
+    // committed for a state that no longer matches it.
+    setForm((prev) => ({ ...prev, state, city: "" }));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -136,17 +152,46 @@ export function CreateCollege() {
           <form className="space-y-8" onSubmit={handleSubmit}>
             <FieldGroup label="College details">
               <div className="space-y-2">
-                <Label htmlFor="name">College name</Label>
+                <Label htmlFor="name">College Full Name</Label>
                 <Input id="name" value={form.name} onChange={(e) => updateField("name", e.target.value)} required autoFocus />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shortName">College Short Name</Label>
+                <Input
+                  id="shortName"
+                  value={form.shortName}
+                  onChange={(e) => updateField("shortName", e.target.value)}
+                  placeholder="e.g. GMIT, BIET"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  This becomes the college's unique ID, used to sign in. Must be different from every other college's.
+                </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="city">City</Label>
-                  <Input id="city" value={form.city} onChange={(e) => updateField("city", e.target.value)} required />
+                  <Label htmlFor="state">State</Label>
+                  <Combobox
+                    id="state"
+                    options={STATE_OPTIONS}
+                    value={form.state}
+                    onChange={handleStateChange}
+                    placeholder="Search for a state or UT…"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="state">State</Label>
-                  <Input id="state" value={form.state} onChange={(e) => updateField("state", e.target.value)} required />
+                  <Label htmlFor="city">City</Label>
+                  <Combobox
+                    id="city"
+                    options={cityOptions}
+                    value={form.city}
+                    onChange={(city) => updateField("city", city)}
+                    placeholder={form.state ? "Search for a city…" : "Choose a state first"}
+                    disabled={!form.state}
+                    required
+                    allowCustomEntry
+                  />
                 </div>
               </div>
             </FieldGroup>

@@ -1,6 +1,7 @@
 import { getPool, withTenant } from "@introbuddy/db";
 import {
   ActivateRequestSchema,
+  AdminLoginRequestSchema,
   LoginRequestSchema,
   PasswordResetCompleteSchema,
   PasswordResetRequestSchema,
@@ -27,7 +28,7 @@ import {
   revokeOpenPasswordResetsForCollegeUser,
 } from "../db/passwordResets.js";
 import { createSession, revokeAllSessionsForCollegeUser } from "../db/sessions.js";
-import { findTenantById, findTenantBySlug } from "../db/tenants.js";
+import { findOrCreatePlatformTenant, findTenantById, findTenantBySlug } from "../db/tenants.js";
 import { isPasswordBreached } from "../lib/breachedPassword.js";
 import {
   sendAlumniActivationConfirmedEmail,
@@ -197,6 +198,67 @@ authRouter.post("/login", byIp("login"), async (req, res) => {
     res.status(200).json({ token: encodeCompoundToken(tenant.id, rawToken) });
   } catch (error) {
     console.error("login failed", error);
+    genericFailure();
+  }
+});
+
+/**
+ * The private super_admin login (spec: "Private Super Admin Portal"). Unlike
+ * /auth/login, the tenant is never client-supplied -- there is exactly one
+ * possible tenant for a super_admin (the sentinel "platform" tenant), so the
+ * server resolves it itself via the same findOrCreatePlatformTenant() used
+ * at bootstrap time, instead of trusting a tenantSlug the client would
+ * otherwise have to know or guess. Session issuance below is byte-for-byte
+ * the same as /auth/login's (createSession, encodeCompoundToken) -- a
+ * session minted here is indistinguishable to resolveSession()/RLS from one
+ * minted by the generic route.
+ *
+ * The explicit role check is a second, independent guarantee on top of the
+ * "platform tenant only ever contains super_admin rows" invariant -- even if
+ * that invariant were ever violated, this route still could not authenticate
+ * a non-super_admin.
+ */
+authRouter.post("/admin-login", byIp("admin-login"), async (req, res) => {
+  const parsed = AdminLoginRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid request" });
+    return;
+  }
+  const { email, password } = parsed.data;
+  const pool = getPool();
+
+  // Same enumeration-resistant shape as /auth/login: unknown email, wrong
+  // role, and wrong password all reach this exact same response.
+  const genericFailure = () => res.status(401).json({ error: "invalid credentials" });
+
+  try {
+    const platformTenant = await findOrCreatePlatformTenant(pool);
+
+    const collegeUser = await withTenant(pool, platformTenant.id, (client) =>
+      findCollegeUserByEmail(client, email),
+    );
+    if (!collegeUser || collegeUser.status !== "active" || collegeUser.role !== "super_admin") {
+      genericFailure();
+      return;
+    }
+
+    const passwordOk = await verifyPassword(collegeUser.email, password);
+    if (!passwordOk) {
+      genericFailure();
+      return;
+    }
+
+    const rawToken = generateRawToken();
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+
+    await withTenant(pool, platformTenant.id, (client) =>
+      createSession(client, { tenantId: platformTenant.id, collegeUserId: collegeUser.id, tokenHash, expiresAt }),
+    );
+
+    res.status(200).json({ token: encodeCompoundToken(platformTenant.id, rawToken) });
+  } catch (error) {
+    console.error("admin login failed", error);
     genericFailure();
   }
 });

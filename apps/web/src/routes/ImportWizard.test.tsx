@@ -43,6 +43,25 @@ describe("ImportWizard", () => {
     expect(apiPostMultipart).not.toHaveBeenCalled();
   });
 
+  it("shows a Download Student Template button above the upload control", () => {
+    renderWizard();
+
+    expect(screen.getByRole("button", { name: /download student template/i })).toBeInTheDocument();
+    expect(screen.getByText(/download the template and fill it with your data before uploading/i)).toBeInTheDocument();
+  });
+
+  it("shows a Download Alumni Template button for the alumni import wizard", () => {
+    render(
+      <MemoryRouter initialEntries={["/college/import-alumni"]}>
+        <Routes>
+          <Route path="/college/import-alumni" element={<ImportWizard targetRole="alumni" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("button", { name: /download alumni template/i })).toBeInTheDocument();
+  });
+
   it("walks upload -> mapping -> validate -> commit -> poll -> committed", async () => {
     const user = userEvent.setup();
 

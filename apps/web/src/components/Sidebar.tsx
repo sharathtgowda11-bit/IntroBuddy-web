@@ -16,14 +16,13 @@ const SIDEBAR_ORDER = [
   "/admin/dashboard",
   "/college/dashboard",
   "/alumni/dashboard",
+  "/alumni/requests",
   // super_admin
   "/admin/colleges/new",
   "/admin/colleges/reinvite",
   // college_admin
   "/college/students",
   "/college/alumni",
-  "/college/import",
-  "/college/import-alumni",
   "/college/invite-student",
   "/college/degrees",
   "/college/profile",
@@ -59,8 +58,9 @@ export function Sidebar() {
   const subtitle = session?.role === "super_admin" ? "Platform" : (session?.tenantSlug ?? "College");
 
   function handleLogout() {
+    const isSuperAdmin = session?.role === "super_admin";
     logout();
-    navigate("/login", { replace: true });
+    navigate(isSuperAdmin ? "/admin/login" : "/login", { replace: true });
   }
 
   return (

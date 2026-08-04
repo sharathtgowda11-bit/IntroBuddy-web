@@ -1,5 +1,5 @@
 import { PERMISSIONS } from "@introbuddy/shared";
-import { Building2, CheckCircle2, Clock, Search } from "lucide-react";
+import { Building2, CheckCircle2, Clock, GraduationCap, Search, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
@@ -17,6 +17,7 @@ interface College {
   state: string | null;
   totalStudents: number;
   activeStudents: number;
+  totalAlumni: number;
 }
 
 const STATUS_STYLES: Record<College["status"], string> = {
@@ -57,6 +58,8 @@ export function PlatformDashboard() {
   const totalColleges = colleges.length;
   const activeColleges = colleges.filter((c) => c.status === "active").length;
   const provisioningColleges = colleges.filter((c) => c.status === "provisioning").length;
+  const totalStudentsAcrossColleges = colleges.reduce((sum, c) => sum + c.totalStudents, 0);
+  const totalAlumniAcrossColleges = colleges.reduce((sum, c) => sum + c.totalAlumni, 0);
 
   const normalizedSearch = search.trim().toLowerCase();
   const filteredColleges = colleges.filter((college) => {
@@ -72,6 +75,8 @@ export function PlatformDashboard() {
     { label: "Total colleges onboarded", value: totalColleges, icon: Building2, tint: "bg-brand/10 text-brand" },
     { label: "Active colleges", value: activeColleges, icon: CheckCircle2, tint: "bg-success/10 text-success" },
     { label: "Colleges in provisioning", value: provisioningColleges, icon: Clock, tint: "bg-brand-accent/10 text-brand-accent" },
+    { label: "Total students", value: totalStudentsAcrossColleges, icon: Users, tint: "bg-primary/10 text-primary" },
+    { label: "Total alumni", value: totalAlumniAcrossColleges, icon: GraduationCap, tint: "bg-brand/10 text-brand" },
   ];
 
   return (
@@ -88,7 +93,7 @@ export function PlatformDashboard() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         {tiles.map(({ label, value, icon: Icon, tint }) => (
           <Card key={label}>
             <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">

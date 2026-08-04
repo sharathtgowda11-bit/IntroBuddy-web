@@ -6,6 +6,10 @@ export const CollegeCreateSchema = z.object({
   // it would otherwise pass min(1) and leak stray leading/trailing
   // whitespace into user-facing copy (activation emails, dashboards, etc.).
   name: z.string().trim().min(1),
+  // The college's chosen unique ID (e.g. "GMIT", "BIET") -- normalized via
+  // slugify() and checked for uniqueness server-side (routes/colleges.ts);
+  // this schema only enforces that something non-empty was actually typed.
+  shortName: z.string().trim().min(1),
   state: z.string().trim().min(1),
   city: z.string().trim().min(1),
   adminName: z.string().trim().min(1),

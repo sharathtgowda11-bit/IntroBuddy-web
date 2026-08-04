@@ -1,8 +1,17 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiGet, apiPatch, apiPost } from "../lib/apiClient.js";
 import { AlumniManagement } from "./AlumniManagement.js";
+
+function renderAlumniManagement() {
+  return render(
+    <MemoryRouter>
+      <AlumniManagement />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock("../lib/apiClient.js", async () => {
   const actual = await vi.importActual<typeof import("../lib/apiClient.js")>("../lib/apiClient.js");
@@ -47,13 +56,29 @@ describe("AlumniManagement", () => {
 
   it("renders an access-denied message when the caller lacks permission", () => {
     can = () => false;
-    render(<AlumniManagement />);
+    renderAlumniManagement();
 
     expect(screen.getByText(/don't have access/i)).toBeInTheDocument();
   });
 
+  it("links the Import Alumni button to the alumni import wizard", async () => {
+    renderAlumniManagement();
+
+    const importLink = await screen.findByRole("link", { name: /import alumni/i });
+    expect(importLink).toHaveAttribute("href", "/college/import-alumni");
+  });
+
+  it("hides the Import Alumni button without alumni.import permission", async () => {
+    const granted = new Set(["alumni.editManagedFields"]);
+    can = (permission: string) => granted.has(permission);
+    renderAlumniManagement();
+
+    await screen.findByText("Siri Alumna");
+    expect(screen.queryByRole("link", { name: /import alumni/i })).not.toBeInTheDocument();
+  });
+
   it("loads and displays alumni, including their company and profile-completeness badge", async () => {
-    render(<AlumniManagement />);
+    renderAlumniManagement();
 
     expect(await screen.findByText("Siri Alumna")).toBeInTheDocument();
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
@@ -64,7 +89,7 @@ describe("AlumniManagement", () => {
   it("edits an alumnus's managed fields (no USN field, unlike students)", async () => {
     vi.mocked(apiPatch).mockResolvedValue({ status: "updated" });
     const user = userEvent.setup();
-    render(<AlumniManagement />);
+    renderAlumniManagement();
 
     await screen.findByText("Siri Alumna");
     await user.click(screen.getByRole("button", { name: /^edit$/i }));
@@ -87,7 +112,7 @@ describe("AlumniManagement", () => {
   it("deactivates an active alumnus", async () => {
     vi.mocked(apiPatch).mockResolvedValue({ status: "deactivated" });
     const user = userEvent.setup();
-    render(<AlumniManagement />);
+    renderAlumniManagement();
 
     await screen.findByText("Siri Alumna");
     await user.click(screen.getByRole("button", { name: /deactivate/i }));
@@ -98,7 +123,7 @@ describe("AlumniManagement", () => {
   it("triggers a password reset", async () => {
     vi.mocked(apiPost).mockResolvedValue({ status: "reset triggered" });
     const user = userEvent.setup();
-    render(<AlumniManagement />);
+    renderAlumniManagement();
 
     await screen.findByText("Siri Alumna");
     await user.click(screen.getByRole("button", { name: /reset password/i }));

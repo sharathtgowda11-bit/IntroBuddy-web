@@ -1,4 +1,5 @@
 import { PERMISSIONS } from "@introbuddy/shared";
+import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../components/ui/button.js";
@@ -56,6 +57,26 @@ const ALUMNI_TARGET_FIELDS: { field: MappingField; label: string }[] = [
   { field: "department", label: "Department" },
   { field: "graduationYear", label: "Graduation year" },
 ];
+
+// Frontend-only, static templates -- just enough of a starting point (real
+// column headers plus one example row) for an admin to understand the
+// expected shape before uploading. The mapping step lets them match any
+// header name to a target field regardless, so these headers don't need to
+// be authoritative, only recognizable.
+const TEMPLATE_COLUMNS: Record<ImportTargetRole, { headers: string[]; example: string[] }> = {
+  student: {
+    headers: ["Name", "USN", "Email", "Degree", "Department", "Graduation Year"],
+    example: ["Jane Doe", "1SM21CS001", "jane.doe@example.com", "B.E.", "Computer Science and Engineering", "2026"],
+  },
+  alumni: {
+    headers: ["Name", "Email", "Company", "Degree", "Department", "Graduation Year"],
+    example: ["Siri Rao", "siri.rao@example.com", "Acme Corp", "B.E.", "Computer Science and Engineering", "2020"],
+  },
+};
+
+function toCsvRow(values: string[]): string {
+  return values.map((value) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)).join(",");
+}
 
 const POLL_INTERVAL_MS = 2500;
 
@@ -128,6 +149,18 @@ export function ImportWizard({ targetRole = "student" }: { targetRole?: ImportTa
 
   if (!can(permission)) {
     return <p className="text-muted-foreground">You don't have access to this page.</p>;
+  }
+
+  function handleDownloadTemplate() {
+    const { headers, example } = TEMPLATE_COLUMNS[targetRole];
+    const csvContent = `${toCsvRow(headers)}\n${toCsvRow(example)}\n`;
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = isAlumni ? "alumni-import-template.csv" : "student-import-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function handleUpload() {
@@ -286,6 +319,16 @@ export function ImportWizard({ targetRole = "student" }: { targetRole?: ImportTa
           <CardDescription>Upload a .csv or .xlsx roster to bulk-invite {entityPlural}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2 rounded-md border bg-muted/40 p-4">
+            <p className="text-sm font-medium">New to importing {entityPlural}?</p>
+            <p className="text-sm text-muted-foreground">
+              Download the template and fill it with your data before uploading.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={handleDownloadTemplate}>
+              <Download className="h-4 w-4" />
+              Download {entityLabel} Template
+            </Button>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="file">Roster file</Label>
             <Input

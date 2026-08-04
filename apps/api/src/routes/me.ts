@@ -64,6 +64,7 @@ meRouter.get("/profile", resolveSession(), requirePermission(PERMISSIONS.PROFILE
         city: profile.city,
         yearsOfExperience: profile.yearsOfExperience,
         workEmail: profile.workEmail,
+        mentorshipAvailable: profile.mentorshipAvailable,
         // Computed, never stored -- recomputed on every read (Part 4).
         profileComplete: isAlumniProfileComplete(profile),
       });
@@ -144,6 +145,13 @@ meRouter.patch(
           res.status(400).json({ error: "invalid request", details: { skills: "must be valid JSON" } });
           return;
         }
+      }
+      // Same transport-boundary decode as skills above: multipart fields
+      // are always strings, and z.coerce.boolean() would treat the string
+      // "false" as truthy -- exactly the "opt out" direction this field
+      // exists for. Decode to a real boolean before the schema sees it.
+      if (typeof body.mentorshipAvailable === "string") {
+        body.mentorshipAvailable = body.mentorshipAvailable === "true";
       }
 
       const parsed = AlumniProfilePatchSchema.safeParse(body);

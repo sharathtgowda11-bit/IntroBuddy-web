@@ -35,13 +35,17 @@ async function tearDown(ctx: Ctx): Promise<void> {
 }
 
 /** Direct SQL insert of a complete alumni_profiles row -- fast, reliable test setup, bypassing the API's own multipart upload path. */
-async function giveCompleteAlumniProfile(ctx: Ctx, collegeUserId: string, overrides: { company?: string } = {}): Promise<void> {
+async function giveCompleteAlumniProfile(
+  ctx: Ctx,
+  collegeUserId: string,
+  overrides: { company?: string; mentorshipAvailable?: boolean } = {},
+): Promise<void> {
   await ctx.superuser.query(
     `insert into public.alumni_profiles
-       (tenant_id, college_user_id, avatar_path, bio, phone, linkedin_url, company, job_title, skills, country, city, years_of_experience)
+       (tenant_id, college_user_id, avatar_path, bio, phone, linkedin_url, company, job_title, skills, country, city, years_of_experience, mentorship_available)
      values ($1, $2, 'fake/avatar.jpg', 'A short bio', '+1-555-0100', 'https://linkedin.com/in/example',
-             $3, 'Engineer', array['TypeScript','SQL'], 'USA', 'Metropolis', 5)`,
-    [ctx.tenantId, collegeUserId, overrides.company ?? "Acme Corp"],
+             $3, 'Engineer', array['TypeScript','SQL'], 'USA', 'Metropolis', 5, $4)`,
+    [ctx.tenantId, collegeUserId, overrides.company ?? "Acme Corp", overrides.mentorshipAvailable ?? true],
   );
 }
 
@@ -205,6 +209,83 @@ test("an incomplete-profile alumnus does not appear in GET /alumni-directory and
       .set("Authorization", incompleteAlumnus.authHeader)
       .send({ type: "job", title: "Should be rejected" });
     assert.equal(postOpportunity.status, 400);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("an alumnus can update mentorship availability via PATCH /me/profile, reflected on the next GET", async () => {
+  const ctx = await setUp();
+  try {
+    const alumnus = await createFixtureActor(ctx.superuser, ctx.pool, ctx.tenantId, { role: "alumni" });
+    await giveCompleteAlumniProfile(ctx, alumnus.collegeUserId);
+
+    const before = await request(app).get("/me/profile").set("Authorization", alumnus.authHeader);
+    assert.equal(before.body.mentorshipAvailable, true);
+
+    const patchResponse = await request(app)
+      .patch("/me/profile")
+      .set("Authorization", alumnus.authHeader)
+      .field("mentorshipAvailable", "false");
+    assert.equal(patchResponse.status, 200);
+
+    const after = await request(app).get("/me/profile").set("Authorization", alumnus.authHeader);
+    assert.equal(after.body.mentorshipAvailable, false);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("mentorship requests are rejected for an alumnus who opted out, but referral requests to the same alumnus still succeed", async () => {
+  const ctx = await setUp();
+  try {
+    const student = await createFixtureActor(ctx.superuser, ctx.pool, ctx.tenantId, { role: "student" });
+    await giveCompleteStudentProfile(ctx, student.collegeUserId);
+    const { collegeUserId: alumnusId } = await createFixtureCollegeUser(ctx.superuser, { tenantId: ctx.tenantId, role: "alumni" });
+    await giveCompleteAlumniProfile(ctx, alumnusId, { mentorshipAvailable: false });
+
+    const mentorshipRequest = await request(app)
+      .post("/requests")
+      .set("Authorization", student.authHeader)
+      .send({ alumnusId, type: "mentorship", message: "please mentor me" });
+    assert.equal(mentorshipRequest.status, 404);
+
+    const opportunity = await ctx.superuser.query<{ id: string }>(
+      `insert into public.opportunities (tenant_id, posted_by_college_user_id, type, title, status)
+       values ($1, $2, 'referral', 'Referral posting', 'open') returning id`,
+      [ctx.tenantId, alumnusId],
+    );
+    // Regression guard: opting out of mentorship must not affect referral
+    // requests, opportunity posting, or directory/eligibility otherwise.
+    const referralRequest = await request(app)
+      .post("/requests")
+      .set("Authorization", student.authHeader)
+      .send({ alumnusId, type: "referral", opportunityId: opportunity.rows[0].id, message: "please refer me" });
+    assert.equal(referralRequest.status, 201);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("GET /alumni-directory and /alumni-directory/:id surface mentorshipAvailable for both true and false", async () => {
+  const ctx = await setUp();
+  try {
+    const student = await createFixtureActor(ctx.superuser, ctx.pool, ctx.tenantId, { role: "student" });
+    const { collegeUserId: availableId } = await createFixtureCollegeUser(ctx.superuser, { tenantId: ctx.tenantId, role: "alumni" });
+    await giveCompleteAlumniProfile(ctx, availableId, { mentorshipAvailable: true });
+    const { collegeUserId: unavailableId } = await createFixtureCollegeUser(ctx.superuser, { tenantId: ctx.tenantId, role: "alumni" });
+    await giveCompleteAlumniProfile(ctx, unavailableId, { mentorshipAvailable: false });
+
+    const list = await request(app).get("/alumni-directory").set("Authorization", student.authHeader);
+    assert.equal(list.status, 200);
+    const available = list.body.alumni.find((a: { id: string }) => a.id === availableId);
+    const unavailable = list.body.alumni.find((a: { id: string }) => a.id === unavailableId);
+    assert.equal(available.mentorshipAvailable, true);
+    assert.equal(unavailable.mentorshipAvailable, false);
+
+    const detail = await request(app).get(`/alumni-directory/${unavailableId}`).set("Authorization", student.authHeader);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.mentorshipAvailable, false);
   } finally {
     await tearDown(ctx);
   }

@@ -29,15 +29,14 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // matches supabase/config.toml's college-media bucket
 });
 
-async function generateUniqueSlug(pool: Pool, name: string): Promise<string> {
-  const base = slugify(name);
-  let candidate = base;
-  let attempt = 0;
-  while (await findTenantBySlug(pool, candidate)) {
-    attempt += 1;
-    candidate = `${base}-${attempt}`;
-  }
-  return candidate;
+// The college's own chosen short name (e.g. "GMIT") becomes the slug --
+// normalized, but never silently mutated on collision the way the old
+// auto-derive-from-name behavior did. An admin who typed a short name
+// expects to get exactly that ID or a clear rejection, not "gmit-1".
+async function resolveRequestedSlug(pool: Pool, shortName: string): Promise<string | null> {
+  const slug = slugify(shortName);
+  const existing = await findTenantBySlug(pool, slug);
+  return existing ? null : slug;
 }
 
 // Platform-wide, for super_admin's dashboard -- deliberately unscoped (no
@@ -60,15 +59,20 @@ collegesRouter.post("/", resolveSession(), requirePermission(PERMISSIONS.COLLEGE
     res.status(400).json({ error: "invalid request", details: parsed.error.flatten() });
     return;
   }
-  const { name, state, city, adminName, adminEmail } = parsed.data;
+  const { name, shortName, state, city, adminName, adminEmail } = parsed.data;
   const session = req.session!;
   const pool = getPool();
   const env = getEnv();
 
   const tenantId = randomUUID();
-  const slug = await generateUniqueSlug(pool, name);
 
   try {
+    const slug = await resolveRequestedSlug(pool, shortName);
+    if (!slug) {
+      res.status(409).json({ error: "this college short name is already in use" });
+      return;
+    }
+
     const result = await withTenant(pool, tenantId, async (client) => {
       await createTenant(client, { id: tenantId, name, slug, state, city });
 

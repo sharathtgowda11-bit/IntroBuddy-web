@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { APP_URL, createFixtureTenant, SUPERUSER_URL, uniqueSuffix } from "@introbuddy/db";
+import { slugify } from "@introbuddy/shared";
 import { Client, Pool } from "pg";
 import request from "supertest";
 import sharp from "sharp";
@@ -54,12 +55,14 @@ test("full college creation -> admin activation -> login, with an audit log entr
   try {
     await clearMailpit();
     const adminEmail = `admin-${uniqueSuffix()}@example.com`;
+    const shortName = `TestCollege${uniqueSuffix()}`;
 
     const createResponse = await request(app)
       .post("/colleges")
       .set("Authorization", ctx.superAdminAuthHeader)
       .send({
         name: `Test College ${uniqueSuffix()}`,
+        shortName,
         state: "Karnataka",
         city: "Bengaluru",
         adminName: "Test Admin",
@@ -68,6 +71,9 @@ test("full college creation -> admin activation -> login, with an audit log entr
     assert.equal(createResponse.status, 201);
     const { id: newTenantId, slug, status } = createResponse.body;
     assert.equal(status, "provisioning");
+    // The college's own chosen short name becomes the slug/college ID --
+    // not something auto-derived from the full name.
+    assert.equal(slug, slugify(shortName));
 
     // Audit log written atomically with creation (ADR 0008) -- read via
     // the superuser connection since app_user's own read would need
@@ -104,6 +110,7 @@ test("a non-super_admin cannot create a college", async () => {
       .set("Authorization", collegeAdmin.authHeader)
       .send({
         name: "Should Not Work",
+        shortName: `ShouldNotWork${uniqueSuffix()}`,
         state: "X",
         city: "Y",
         adminName: "Z",
@@ -111,6 +118,45 @@ test("a non-super_admin cannot create a college", async () => {
       });
 
     assert.equal(response.status, 403);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("creating a college with a short name that's already in use is rejected with 409, and creates nothing", async () => {
+  const ctx = await setUp();
+  try {
+    const shortName = `Dup${uniqueSuffix()}`;
+    const firstResponse = await request(app)
+      .post("/colleges")
+      .set("Authorization", ctx.superAdminAuthHeader)
+      .send({
+        name: "First College",
+        shortName,
+        state: "Karnataka",
+        city: "Bengaluru",
+        adminName: "Admin One",
+        adminEmail: `admin-one-${uniqueSuffix()}@example.com`,
+      });
+    assert.equal(firstResponse.status, 201);
+
+    // Same short name, different casing -- slugify() normalizes both to the
+    // same slug, so this must collide too, not slip through as "distinct".
+    const secondResponse = await request(app)
+      .post("/colleges")
+      .set("Authorization", ctx.superAdminAuthHeader)
+      .send({
+        name: "Second College",
+        shortName: shortName.toUpperCase(),
+        state: "Karnataka",
+        city: "Mysuru",
+        adminName: "Admin Two",
+        adminEmail: `admin-two-${uniqueSuffix()}@example.com`,
+      });
+    assert.equal(secondResponse.status, 409);
+
+    const tenantRows = await ctx.superuser.query("select count(*) from public.tenants where slug = $1", [slugify(shortName)]);
+    assert.equal(tenantRows.rows[0].count, "1");
   } finally {
     await tearDown(ctx);
   }
@@ -127,6 +173,7 @@ test("profile update flips status from provisioning to active once logo and bann
       .set("Authorization", ctx.superAdminAuthHeader)
       .send({
         name: `Test College ${uniqueSuffix()}`,
+        shortName: `TestCollege${uniqueSuffix()}`,
         state: "Karnataka",
         city: "Bengaluru",
         adminName: "Test Admin",

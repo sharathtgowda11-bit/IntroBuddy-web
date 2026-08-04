@@ -1,6 +1,7 @@
 import { PERMISSIONS, type CertificationCreateInput } from "@introbuddy/shared";
-import { FileText, Plus, UserRound } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Camera, FileText, Github, Linkedin, Mail, Plus, UploadCloud, UserRound } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { ImageCropDialog } from "../components/ImageCropDialog.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
@@ -10,6 +11,7 @@ import { Select } from "../components/ui/select.js";
 import { Textarea } from "../components/ui/textarea.js";
 import { useSession } from "../context/sessionContext.js";
 import { apiDelete, apiGet, apiPatchMultipart, apiPost, ApiError } from "../lib/apiClient.js";
+import { cn } from "../lib/utils.js";
 
 interface Certification {
   id: string;
@@ -43,12 +45,24 @@ type NewCertification = { name: string; type: Certification["type"]; issuingOrga
 
 const emptyCertification: NewCertification = { name: "", type: "workshop", issuingOrganisation: "", date: "", certificateUrl: "" };
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Field({ title, htmlFor, children }: { title: string; htmlFor: string; children: ReactNode }) {
   return (
-    <section className="space-y-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+    <div className="space-y-2">
+      <Label htmlFor={htmlFor} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </Label>
       {children}
-    </section>
+    </div>
+  );
+}
+
+/** Icon-prefixed input, matching the reference mockup's Contact Details rows. */
+function IconInput({ icon: Icon, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { icon: typeof Mail }) {
+  return (
+    <div className="relative">
+      <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input className={cn("pl-9", className)} {...props} />
+    </div>
   );
 }
 
@@ -62,12 +76,17 @@ export function StudentProfile() {
   const [interests, setInterests] = useState("");
   const [achievements, setAchievements] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newCert, setNewCert] = useState<NewCertification>(emptyCertification);
   const [certError, setCertError] = useState<string | null>(null);
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+  const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
 
   function applyProfile(data: Profile) {
     setProfile(data);
@@ -99,6 +118,19 @@ export function StudentProfile() {
     return <p className="text-muted-foreground">Loading…</p>;
   }
 
+  function selectAvatar(file: File | null) {
+    setAvatarFile(file);
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  function handleCropped(file: File) {
+    selectAvatar(file);
+    setPendingCropFile(null);
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -118,7 +150,7 @@ export function StudentProfile() {
     try {
       await apiPatchMultipart("/me/profile", formData);
       await loadProfile();
-      setAvatarFile(null);
+      selectAvatar(null);
       setResumeFile(null);
       setMessage("Profile updated.");
     } catch (err) {
@@ -152,8 +184,10 @@ export function StudentProfile() {
     await loadProfile();
   }
 
+  const avatarSrc = avatarPreview ?? profile.avatarUrl;
+
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader
         title="My profile"
         description={
@@ -180,96 +214,146 @@ export function StudentProfile() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-          <CardDescription>Everything alumni will see when they view your profile.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-8" onSubmit={handleSubmit}>
-            <Section title="Photo & résumé">
-              <div className="space-y-2">
-                <Label htmlFor="avatar">Photo</Label>
-                <div className="flex items-center gap-4">
-                  {profile.avatarUrl ? (
-                    <img src={profile.avatarUrl} alt="Current avatar" className="h-16 w-16 rounded-full object-cover" />
-                  ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserRound className="h-7 w-7" />
-                    </div>
-                  )}
-                  <Input
+      <form onSubmit={handleSubmit}>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
+            {/* Hero: photo + identity, mirrors the reference mockup's profile card */}
+            <Card>
+              <CardContent className="flex flex-col items-center gap-4 pt-6 text-center sm:flex-row sm:text-left">
+                <div className="relative shrink-0">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border bg-muted">
+                    {avatarSrc ? (
+                      <img src={avatarSrc} alt="Your avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      <UserRound className="h-8 w-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  <input
+                    ref={avatarInputRef}
                     id="avatar"
+                    aria-label="Photo"
                     type="file"
                     accept="image/*"
-                    className="max-w-xs"
-                    onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+                    className="hidden"
+                    onChange={(e) => setPendingCropFile(e.target.files?.[0] ?? null)}
                   />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    aria-label="Change photo"
+                    className="absolute -bottom-1 -right-1 rounded-full bg-primary p-1.5 text-primary-foreground shadow hover:bg-primary/90"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="resume">Resume (PDF)</Label>
-                {profile.resumeUrl && (
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold">{profile.name ?? profile.email}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {profile.degreeName} · {profile.departmentName}, class of {profile.graduationYear}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>About you</CardTitle>
+                <CardDescription>Everything alumni will see when they view your profile.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Field title="Bio" htmlFor="bio">
+                  <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} />
+                </Field>
+                <Field title="Skills" htmlFor="skills">
+                  <Textarea id="skills" value={skills} onChange={(e) => setSkills(e.target.value)} />
+                </Field>
+                <Field title="Interests" htmlFor="interests">
+                  <Textarea id="interests" value={interests} onChange={(e) => setInterests(e.target.value)} />
+                </Field>
+                <Field title="Achievements" htmlFor="achievements">
+                  <Textarea id="achievements" value={achievements} onChange={(e) => setAchievements(e.target.value)} />
+                </Field>
+              </CardContent>
+            </Card>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" variant="brand" size="lg" disabled={isSubmitting}>
+                {isSubmitting ? "Saving…" : "Save profile"}
+              </Button>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              {message && <p className="text-sm text-success">{message}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Contact Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Field title="Email" htmlFor="email">
+                  <IconInput icon={Mail} id="email" value={profile.email} readOnly className="bg-muted/40" />
+                </Field>
+                <Field title="LinkedIn URL" htmlFor="linkedinUrl">
+                  <IconInput
+                    icon={Linkedin}
+                    id="linkedinUrl"
+                    type="url"
+                    placeholder="https://linkedin.com/in/…"
+                    value={linkedinUrl}
+                    onChange={(e) => setLinkedinUrl(e.target.value)}
+                  />
+                </Field>
+                <Field title="GitHub URL" htmlFor="githubUrl">
+                  <IconInput
+                    icon={Github}
+                    id="githubUrl"
+                    type="url"
+                    placeholder="https://github.com/…"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                  />
+                </Field>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Resume</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {profile.resumeUrl ? (
                   <a
                     href={profile.resumeUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex w-fit items-center gap-1.5 text-sm text-brand hover:underline"
+                    className="flex items-center gap-2 rounded-md border p-3 text-sm hover:bg-accent"
                   >
-                    <FileText className="h-4 w-4" />
-                    View current resume
+                    <FileText className="h-5 w-5 shrink-0 text-brand" />
+                    <span className="min-w-0 flex-1 truncate">View current resume</span>
                   </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No resume uploaded yet.</p>
                 )}
-                <Input
+                {resumeFile && <p className="truncate text-xs text-muted-foreground">Selected: {resumeFile.name}</p>}
+                <input
+                  ref={resumeInputRef}
                   id="resume"
+                  aria-label="Resume (PDF)"
                   type="file"
                   accept="application/pdf"
-                  className="max-w-xs"
+                  className="hidden"
                   onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
                 />
-              </div>
-            </Section>
-
-            <Section title="Links">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="linkedinUrl">LinkedIn URL</Label>
-                  <Input id="linkedinUrl" type="url" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="githubUrl">GitHub URL</Label>
-                  <Input id="githubUrl" type="url" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} />
-                </div>
-              </div>
-            </Section>
-
-            <Section title="About you">
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="skills">Skills</Label>
-                <Textarea id="skills" value={skills} onChange={(e) => setSkills(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="interests">Interests</Label>
-                <Textarea id="interests" value={interests} onChange={(e) => setInterests(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="achievements">Achievements</Label>
-                <Textarea id="achievements" value={achievements} onChange={(e) => setAchievements(e.target.value)} />
-              </div>
-            </Section>
-
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {message && <p className="text-sm text-success">{message}</p>}
-            <Button type="submit" variant="brand" size="lg" disabled={isSubmitting}>
-              {isSubmitting ? "Saving…" : "Save profile"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => resumeInputRef.current?.click()}>
+                  <UploadCloud className="h-4 w-4" />
+                  {profile.resumeUrl ? "Replace résumé" : "Upload résumé"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </form>
 
       <Card>
         <CardHeader>
@@ -363,6 +447,16 @@ export function StudentProfile() {
           </form>
         </CardContent>
       </Card>
+
+      <ImageCropDialog
+        open={pendingCropFile !== null}
+        file={pendingCropFile}
+        aspect={1}
+        outputWidth={512}
+        outputHeight={512}
+        onCancel={() => setPendingCropFile(null)}
+        onCropped={handleCropped}
+      />
     </div>
   );
 }

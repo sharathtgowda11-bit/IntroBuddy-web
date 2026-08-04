@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   MailCheck,
   Settings2,
-  UploadCloud,
   UserCircle,
   UserPlus,
   Users,
@@ -62,14 +61,6 @@ export const NAV_ACTIONS: NavAction[] = [
   },
   {
     section: "Students",
-    icon: UploadCloud,
-    title: "Import students",
-    description: "Bulk-onboard students from a CSV or Excel file.",
-    to: "/college/import",
-    visible: (can) => can(PERMISSIONS.STUDENT_IMPORT),
-  },
-  {
-    section: "Students",
     icon: UserPlus,
     title: "Invite a student",
     description: "Add a single student and send an activation email.",
@@ -85,14 +76,6 @@ export const NAV_ACTIONS: NavAction[] = [
     visible: (can) => can(PERMISSIONS.STUDENT_EDIT_MANAGED_FIELDS),
   },
   // Phase 2: college admins onboard and manage alumni exactly like students.
-  {
-    section: "Alumni",
-    icon: GraduationCap,
-    title: "Import alumni",
-    description: "Bulk-onboard alumni from a CSV or Excel file.",
-    to: "/college/import-alumni",
-    visible: (can) => can(PERMISSIONS.ALUMNI_IMPORT),
-  },
   {
     section: "Alumni",
     icon: UsersRound,
@@ -128,6 +111,16 @@ export const NAV_ACTIONS: NavAction[] = [
     description: "Your postings, received requests, and profile at a glance.",
     to: "/alumni/dashboard",
     visible: (can, role) => role === "alumni" && can(PERMISSIONS.OPPORTUNITY_MANAGE),
+  },
+  // Split out of the dashboard so a growing request history doesn't
+  // clutter it -- the dashboard now only links here (see AlumniDashboard.tsx).
+  {
+    section: "Alumni network",
+    icon: Inbox,
+    title: "Requests",
+    description: "Manage mentorship and referral requests from students.",
+    to: "/alumni/requests",
+    visible: (can, role) => role === "alumni" && can(PERMISSIONS.REQUEST_RESPOND),
   },
   {
     section: "Insights",

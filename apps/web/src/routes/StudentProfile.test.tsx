@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiDelete, apiGet, apiPatchMultipart, apiPost } from "../lib/apiClient.js";
 import { StudentProfile } from "./StudentProfile.js";
@@ -8,6 +9,19 @@ vi.mock("../lib/apiClient.js", async () => {
   const actual = await vi.importActual<typeof import("../lib/apiClient.js")>("../lib/apiClient.js");
   return { ...actual, apiGet: vi.fn(), apiPatchMultipart: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn() };
 });
+
+// See CollegeProfile.test.tsx's identical note: the real dialog needs
+// image decoding jsdom doesn't support, so pages get a stub that fires
+// onCropped as soon as they open the dialog.
+vi.mock("../components/ImageCropDialog.js", () => ({
+  ImageCropDialog: ({ open, onCropped }: { open: boolean; onCropped: (file: File) => void }) => {
+    useEffect(() => {
+      if (open) onCropped(new File(["cropped"], "cropped.jpg", { type: "image/jpeg" }));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+    return null;
+  },
+}));
 
 let can: (permission: string) => boolean = () => true;
 vi.mock("../context/sessionContext.js", () => ({
@@ -70,6 +84,24 @@ describe("StudentProfile", () => {
 
     await waitFor(() => expect(apiPatchMultipart).toHaveBeenCalledWith("/me/profile", expect.any(FormData)));
     expect(await screen.findByText(/profile updated/i)).toBeInTheDocument();
+  });
+
+  it("routes a picked photo through the crop dialog before including it in the submitted form data", async () => {
+    vi.mocked(apiGet).mockResolvedValue(baseProfile);
+    vi.mocked(apiPatchMultipart).mockResolvedValue({ status: "updated" });
+    const user = userEvent.setup();
+    render(<StudentProfile />);
+
+    await screen.findByText(/1SM21CS999/);
+    const file = new File(["photo-bytes"], "photo.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText(/^photo$/i), file);
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    await waitFor(() => expect(apiPatchMultipart).toHaveBeenCalled());
+    const formData = vi.mocked(apiPatchMultipart).mock.calls[0][1] as FormData;
+    const submittedAvatar = formData.get("avatar") as File;
+    expect(submittedAvatar).toBeInstanceOf(File);
+    expect(submittedAvatar.type).toBe("image/jpeg");
   });
 
   it("adds a certification", async () => {

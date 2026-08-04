@@ -5,6 +5,7 @@ import { createIdentity, encodeCompoundToken, generateRawToken } from "@introbud
 import { Client, Pool } from "pg";
 import request from "supertest";
 import { createApp } from "../app.js";
+import { findOrCreatePlatformTenant } from "../db/tenants.js";
 import { setPassword } from "../lib/supabaseAuth.js";
 import { createFixtureActor } from "../testHelpers/actors.js";
 import { clearMailpit, extractTokenFromEmail, waitForEmailTo } from "../testHelpers/mailpit.js";
@@ -416,6 +417,61 @@ test("single-student add rejects a graduation year outside the plausible range",
       });
 
     assert.equal(response.status, 400);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("admin-login succeeds for an active super_admin with correct credentials, and rejects a wrong password identically to an unknown email", async () => {
+  const ctx = await setUp();
+  try {
+    const platformTenant = await findOrCreatePlatformTenant(ctx.pool);
+    const email = `super-admin-${uniqueSuffix()}@example.com`;
+    const userId = await createIdentity(ctx.pool, email);
+    await ctx.superuser.query(
+      `insert into public.college_users (tenant_id, user_id, email, role, status) values ($1, $2, $3, 'super_admin', 'active')`,
+      [platformTenant.id, userId, email],
+    );
+    await setPassword(userId, PASSWORD);
+
+    const success = await request(app).post("/auth/admin-login").send({ email, password: PASSWORD });
+    assert.equal(success.status, 200);
+    assert.ok(success.body.token);
+
+    const wrongPassword = await request(app).post("/auth/admin-login").send({ email, password: "definitely-wrong" });
+    const unknownEmail = await request(app)
+      .post("/auth/admin-login")
+      .send({ email: `no-such-admin-${uniqueSuffix()}@example.com`, password: "definitely-wrong" });
+
+    assert.equal(wrongPassword.status, 401);
+    assert.equal(wrongPassword.status, unknownEmail.status);
+    assert.deepEqual(wrongPassword.body, unknownEmail.body);
+  } finally {
+    await tearDown(ctx);
+  }
+});
+
+test("admin-login rejects a non-super_admin account even if one exists inside the platform tenant", async () => {
+  const ctx = await setUp();
+  try {
+    const platformTenant = await findOrCreatePlatformTenant(ctx.pool);
+    const email = `college-admin-in-platform-${uniqueSuffix()}@example.com`;
+    const userId = await createIdentity(ctx.pool, email);
+    await ctx.superuser.query(
+      `insert into public.college_users (tenant_id, user_id, email, role, status) values ($1, $2, $3, 'college_admin', 'active')`,
+      [platformTenant.id, userId, email],
+    );
+    await setPassword(userId, PASSWORD);
+
+    const adminLoginResponse = await request(app).post("/auth/admin-login").send({ email, password: PASSWORD });
+    assert.equal(adminLoginResponse.status, 401);
+
+    // Sanity check: the account itself is real and can log in through the
+    // ordinary route -- proof the 401 above is the role check, not a broken fixture.
+    const ordinaryLoginResponse = await request(app)
+      .post("/auth/login")
+      .send({ tenantSlug: platformTenant.slug, emailOrUsn: email, password: PASSWORD });
+    assert.equal(ordinaryLoginResponse.status, 200);
   } finally {
     await tearDown(ctx);
   }

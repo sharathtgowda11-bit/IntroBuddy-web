@@ -55,6 +55,14 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        marquee: { to: { transform: "translateX(-50%)" } },
+      },
+      animation: {
+        // The track renders its item list twice back-to-back, so a 50%
+        // translate is exactly one full loop with no visible seam.
+        marquee: "marquee 28s linear infinite",
+      },
     },
   },
   plugins: [tailwindcssAnimate],

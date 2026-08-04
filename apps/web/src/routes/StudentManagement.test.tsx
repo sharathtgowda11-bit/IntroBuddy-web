@@ -1,8 +1,17 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiGet, apiPatch, apiPost } from "../lib/apiClient.js";
 import { StudentManagement } from "./StudentManagement.js";
+
+function renderStudentManagement() {
+  return render(
+    <MemoryRouter>
+      <StudentManagement />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock("../lib/apiClient.js", async () => {
   const actual = await vi.importActual<typeof import("../lib/apiClient.js")>("../lib/apiClient.js");
@@ -47,13 +56,29 @@ describe("StudentManagement", () => {
 
   it("renders an access-denied message when the caller lacks permission", () => {
     can = () => false;
-    render(<StudentManagement />);
+    renderStudentManagement();
 
     expect(screen.getByText(/don't have access/i)).toBeInTheDocument();
   });
 
+  it("links the Import Students button to the import wizard", async () => {
+    renderStudentManagement();
+
+    const importLink = await screen.findByRole("link", { name: /import students/i });
+    expect(importLink).toHaveAttribute("href", "/college/import");
+  });
+
+  it("hides the Import Students button without student.import permission", async () => {
+    const granted = new Set(["student.editManagedFields"]);
+    can = (permission: string) => granted.has(permission);
+    renderStudentManagement();
+
+    await screen.findByText("Jane Doe");
+    expect(screen.queryByRole("link", { name: /import students/i })).not.toBeInTheDocument();
+  });
+
   it("loads and displays students", async () => {
-    render(<StudentManagement />);
+    renderStudentManagement();
 
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
     expect(screen.getByText("1SM21CS001")).toBeInTheDocument();
@@ -63,7 +88,7 @@ describe("StudentManagement", () => {
   it("edits a student's managed fields", async () => {
     vi.mocked(apiPatch).mockResolvedValue({ status: "updated" });
     const user = userEvent.setup();
-    render(<StudentManagement />);
+    renderStudentManagement();
 
     await screen.findByText("Jane Doe");
     await user.click(screen.getByRole("button", { name: /^edit$/i }));
@@ -85,7 +110,7 @@ describe("StudentManagement", () => {
   it("deactivates an active student", async () => {
     vi.mocked(apiPatch).mockResolvedValue({ status: "deactivated" });
     const user = userEvent.setup();
-    render(<StudentManagement />);
+    renderStudentManagement();
 
     await screen.findByText("Jane Doe");
     await user.click(screen.getByRole("button", { name: /deactivate/i }));
@@ -96,7 +121,7 @@ describe("StudentManagement", () => {
   it("triggers a password reset", async () => {
     vi.mocked(apiPost).mockResolvedValue({ status: "reset triggered" });
     const user = userEvent.setup();
-    render(<StudentManagement />);
+    renderStudentManagement();
 
     await screen.findByText("Jane Doe");
     await user.click(screen.getByRole("button", { name: /reset password/i }));

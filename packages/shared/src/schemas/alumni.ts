@@ -59,6 +59,12 @@ export const AlumniProfilePatchSchema = z.object({
   city: z.string().optional(),
   yearsOfExperience: z.coerce.number().int().min(0).optional(),
   workEmail: z.string().email().optional(),
+  // Whether the alumnus currently accepts mentorship requests (referral
+  // requests are unaffected -- see PERMISSIONS.REQUEST_SEND/routes/requests.ts).
+  // A plain boolean, not z.coerce.boolean(): coercion would treat the string
+  // "false" as truthy. The route decodes the multipart "true"/"false" string
+  // into a real boolean before this schema ever sees it, same as `skills`.
+  mentorshipAvailable: z.boolean().optional(),
 });
 export type AlumniProfilePatchInput = z.infer<typeof AlumniProfilePatchSchema>;
 

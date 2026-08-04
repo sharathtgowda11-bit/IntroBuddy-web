@@ -69,6 +69,7 @@ export interface OwnAlumniProfileRecord {
   city: string | null;
   yearsOfExperience: number | null;
   workEmail: string | null;
+  mentorshipAvailable: boolean;
 }
 
 interface OwnAlumniProfileRow {
@@ -91,6 +92,7 @@ interface OwnAlumniProfileRow {
   city: string | null;
   years_of_experience: number | null;
   work_email: string | null;
+  mentorship_available: boolean;
 }
 
 function mapOwnProfileRow(row: OwnAlumniProfileRow): OwnAlumniProfileRecord {
@@ -114,6 +116,7 @@ function mapOwnProfileRow(row: OwnAlumniProfileRow): OwnAlumniProfileRecord {
     city: row.city,
     yearsOfExperience: row.years_of_experience,
     workEmail: row.work_email,
+    mentorshipAvailable: row.mentorship_available,
   };
 }
 
@@ -131,7 +134,8 @@ export async function getOwnAlumniProfile(client: PoolClient, collegeUserId: str
        cu.id as college_user_id, cu.name, cu.email, cu.graduation_year,
        t.name as college_name, d.name as degree_name, dept.name as department_name,
        ap.avatar_path, ap.bio, ap.phone, ap.linkedin_url, ap.github_url,
-       ap.company, ap.job_title, ap.skills, ap.country, ap.city, ap.years_of_experience, ap.work_email
+       ap.company, ap.job_title, ap.skills, ap.country, ap.city, ap.years_of_experience, ap.work_email,
+       coalesce(ap.mentorship_available, true) as mentorship_available
      from public.college_users cu
      left join public.tenants t on t.id = cu.tenant_id
      left join public.degrees d on d.id = cu.degree_id
@@ -156,6 +160,7 @@ export interface UpsertAlumniProfileParams {
   city?: string | null;
   yearsOfExperience?: number | null;
   workEmail?: string | null;
+  mentorshipAvailable?: boolean;
 }
 
 /**
@@ -172,8 +177,8 @@ export async function upsertAlumniProfile(
 ): Promise<void> {
   await client.query(
     `insert into public.alumni_profiles
-       (tenant_id, college_user_id, avatar_path, bio, phone, linkedin_url, github_url, company, job_title, skills, country, city, years_of_experience, work_email)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       (tenant_id, college_user_id, avatar_path, bio, phone, linkedin_url, github_url, company, job_title, skills, country, city, years_of_experience, work_email, mentorship_available)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, coalesce($15, true))
      on conflict (college_user_id) do update set
        avatar_path = coalesce($3, public.alumni_profiles.avatar_path),
        bio = coalesce($4, public.alumni_profiles.bio),
@@ -187,6 +192,7 @@ export async function upsertAlumniProfile(
        city = coalesce($12, public.alumni_profiles.city),
        years_of_experience = coalesce($13, public.alumni_profiles.years_of_experience),
        work_email = coalesce($14, public.alumni_profiles.work_email),
+       mentorship_available = coalesce($15, public.alumni_profiles.mentorship_available),
        updated_at = now()`,
     [
       tenantId,
@@ -203,6 +209,7 @@ export async function upsertAlumniProfile(
       params.city ?? null,
       params.yearsOfExperience ?? null,
       params.workEmail ?? null,
+      params.mentorshipAvailable ?? null,
     ],
   );
 }
@@ -211,17 +218,28 @@ export interface AlumniEligibility {
   id: string;
   status: CollegeUserStatus;
   isComplete: boolean;
+  mentorshipAvailable: boolean;
 }
 
 /**
  * Backs the two visibility gates that reuse the same rule as the
  * directory (Part 4): an opportunity poster must be active + complete
  * before posting, and a request's target alumnus must be active +
- * complete before it can be sent.
+ * complete before it can be sent. mentorshipAvailable is a separate,
+ * narrower gate consumed only by routes/requests.ts's mentorship branch --
+ * it must never fold into isComplete/status, or an alumnus opting out of
+ * mentorship would also stop receiving referral requests and lose the
+ * ability to post opportunities.
  */
 export async function getAlumniEligibility(client: PoolClient, collegeUserId: string): Promise<AlumniEligibility | null> {
-  const result = await client.query<{ id: string; status: CollegeUserStatus; is_complete: boolean }>(
-    `select cu.id, cu.status, ${ALUMNI_PROFILE_COMPLETE_SQL} as is_complete
+  const result = await client.query<{
+    id: string;
+    status: CollegeUserStatus;
+    is_complete: boolean;
+    mentorship_available: boolean;
+  }>(
+    `select cu.id, cu.status, ${ALUMNI_PROFILE_COMPLETE_SQL} as is_complete,
+       coalesce(ap.mentorship_available, true) as mentorship_available
      from public.college_users cu
      left join public.alumni_profiles ap on ap.college_user_id = cu.id
      where cu.id = $1 and cu.role = 'alumni'`,
@@ -229,5 +247,5 @@ export async function getAlumniEligibility(client: PoolClient, collegeUserId: st
   );
   const row = result.rows[0];
   if (!row) return null;
-  return { id: row.id, status: row.status, isComplete: row.is_complete };
+  return { id: row.id, status: row.status, isComplete: row.is_complete, mentorshipAvailable: row.mentorship_available };
 }

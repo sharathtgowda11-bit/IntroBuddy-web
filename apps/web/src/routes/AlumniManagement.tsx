@@ -1,5 +1,7 @@
 import { PERMISSIONS, type AlumniEditInput } from "@introbuddy/shared";
+import { GraduationCap } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
 import { Input } from "../components/ui/input.js";
@@ -146,9 +148,19 @@ export function AlumniManagement() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Alumni</CardTitle>
-        <CardDescription>{total} total</CardDescription>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Alumni</CardTitle>
+          <CardDescription>{total} total</CardDescription>
+        </div>
+        {can(PERMISSIONS.ALUMNI_IMPORT) && (
+          <Button asChild>
+            <Link to="/college/import-alumni">
+              <GraduationCap className="h-4 w-4" />
+              Import Alumni
+            </Link>
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <form className="flex flex-wrap items-end gap-3" onSubmit={handleSearchSubmit}>

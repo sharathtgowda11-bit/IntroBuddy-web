@@ -1,7 +1,7 @@
 import { PERMISSIONS } from "@introbuddy/shared";
-import { UserRound } from "lucide-react";
+import { BadgeCheck, GraduationCap, Linkedin, UserRound } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent } from "../components/ui/card.js";
@@ -19,8 +19,10 @@ interface DirectoryAlumnus {
   jobTitle: string | null;
   city: string | null;
   country: string | null;
+  linkedinUrl: string | null;
   graduationYear: number | null;
   departmentName: string | null;
+  mentorshipAvailable: boolean;
 }
 
 interface Department {
@@ -30,6 +32,7 @@ interface Department {
 
 export function AlumniDirectory() {
   const { can } = useSession();
+  const navigate = useNavigate();
   const [alumni, setAlumni] = useState<DirectoryAlumnus[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [search, setSearch] = useState("");
@@ -129,28 +132,89 @@ export function AlumniDirectory() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {alumni.map((alumnus) => (
-            <Link key={alumnus.id} to={`/alumni-directory/${alumnus.id}`}>
-              <Card className="h-full transition-colors hover:border-brand">
-                <CardContent className="flex items-start gap-3 pt-6">
-                  {alumnus.avatarUrl ? (
-                    <img src={alumnus.avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
-                  ) : (
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserRound className="h-6 w-6" />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{alumnus.name ?? "Alumnus"}</p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {alumnus.jobTitle ? `${alumnus.jobTitle}${alumnus.company ? ` at ${alumnus.company}` : ""}` : "—"}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[alumnus.departmentName, alumnus.graduationYear].filter(Boolean).join(" · ") || "—"}
-                    </p>
+            <Card
+              key={alumnus.id}
+              role="link"
+              tabIndex={0}
+              onClick={() => navigate(`/alumni-directory/${alumnus.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") navigate(`/alumni-directory/${alumnus.id}`);
+              }}
+              className="relative h-full cursor-pointer transition-shadow hover:shadow-md"
+            >
+              {/* Every alumnus reaching this list is already gated to
+                  status='active' + a complete profile (Part 4's directory
+                  visibility rule) -- this badge states that real,
+                  already-enforced guarantee rather than a fabricated
+                  per-alumnus "availability" status the data model doesn't have. */}
+              <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+                <BadgeCheck className="h-3 w-3" />
+                Verified
+              </span>
+
+              <CardContent className="flex flex-col items-center pt-8 text-center">
+                {alumnus.avatarUrl ? (
+                  <img src={alumnus.avatarUrl} alt="" className="h-16 w-16 rounded-full object-cover" />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <UserRound className="h-7 w-7" />
                   </div>
-                </CardContent>
-              </Card>
-            </Link>
+                )}
+
+                <p className="mt-3 font-semibold">{alumnus.name ?? "Alumnus"}</p>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                  {alumnus.jobTitle ? (
+                    <>
+                      {alumnus.jobTitle}
+                      {alumnus.company && (
+                        <>
+                          {" "}
+                          at <span className="font-medium text-foreground">{alumnus.company}</span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    alumnus.company || "—"
+                  )}
+                </p>
+
+                {alumnus.linkedinUrl && (
+                  <a
+                    href={alumnus.linkedinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`${alumnus.name ?? "Alumnus"}'s LinkedIn profile`}
+                    className="mt-3 flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <Linkedin className="h-3.5 w-3.5" />
+                  </a>
+                )}
+
+                <div className="mt-4 flex w-full flex-wrap justify-center gap-2 border-t pt-4">
+                  {alumnus.departmentName && (
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                      {alumnus.departmentName}
+                    </span>
+                  )}
+                  {alumnus.graduationYear && (
+                    <span className="rounded-full bg-brand-accent/10 px-2.5 py-1 text-xs font-medium text-brand-accent">
+                      Class of &apos;{String(alumnus.graduationYear).slice(-2)}
+                    </span>
+                  )}
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+                      alumnus.mentorshipAvailable
+                        ? "bg-success/10 text-success"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <GraduationCap className="h-3 w-3" />
+                    {alumnus.mentorshipAvailable ? "Available for Mentorship" : "Not Available"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

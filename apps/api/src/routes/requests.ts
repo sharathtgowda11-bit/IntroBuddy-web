@@ -77,6 +77,16 @@ requestsRouter.post("/", resolveSession(), requirePermission(PERMISSIONS.REQUEST
         return { kind: "alumnus_not_found" as const };
       }
 
+      // Mentorship-only gate: an alumnus who has opted out of mentorship
+      // stays fully eligible for referral requests and opportunity
+      // posting -- those don't consult mentorshipAvailable at all. Same
+      // outcome/response as the check above, on purpose: a student must
+      // not be able to distinguish "doesn't exist," "incomplete profile,"
+      // and "exists but unavailable for mentorship" from the response.
+      if (type === "mentorship" && !target.mentorshipAvailable) {
+        return { kind: "alumnus_not_found" as const };
+      }
+
       if (type === "referral") {
         // Schema guarantees opportunityId is present for a referral
         // request. The referenced opportunity must belong to this

@@ -56,6 +56,17 @@ export const LoginRequestSchema = z.object({
 });
 export type LoginRequestInput = z.infer<typeof LoginRequestSchema>;
 
+// Super admin's private login (see /auth/admin-login) never accepts a
+// tenantSlug from the client -- the server resolves the sentinel "platform"
+// tenant itself (findOrCreatePlatformTenant), so this schema is
+// intentionally narrower than LoginRequestSchema rather than reusing it
+// with an optional field.
+export const AdminLoginRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+export type AdminLoginRequestInput = z.infer<typeof AdminLoginRequestSchema>;
+
 export const PasswordResetRequestSchema = z.object({
   tenantSlug: z.string().min(1),
   emailOrUsn: z.string().min(1),

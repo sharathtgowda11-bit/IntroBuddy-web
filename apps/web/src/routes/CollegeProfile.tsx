@@ -1,6 +1,7 @@
 import { PERMISSIONS } from "@introbuddy/shared";
 import { Building2, Camera, Info, Mail, MapPin } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ImageCropDialog } from "../components/ImageCropDialog.js";
 import { PageHeader } from "../components/PageHeader.js";
 import { Button } from "../components/ui/button.js";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js";
@@ -56,6 +57,12 @@ export function CollegeProfile() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
+  // Which image is being cropped right now, if any -- drives both the
+  // dialog's aspect/output size and which setFile/setPreview pair its
+  // result feeds back into.
+  const [cropTarget, setCropTarget] = useState<"logo" | "banner" | null>(null);
+  const [pendingCropFile, setPendingCropFile] = useState<File | null>(null);
+
   function applyProfile(data: CollegeProfile) {
     setProfile(data);
     setDescription(data.description ?? "");
@@ -93,6 +100,24 @@ export function CollegeProfile() {
   function clearSelections() {
     selectImage(null, setLogoFile, setLogoPreview);
     selectImage(null, setBannerFile, setBannerPreview);
+  }
+
+  function pickImage(target: "logo" | "banner", file: File | null) {
+    if (!file) return;
+    setCropTarget(target);
+    setPendingCropFile(file);
+  }
+
+  function handleCropped(file: File) {
+    if (cropTarget === "logo") selectImage(file, setLogoFile, setLogoPreview);
+    if (cropTarget === "banner") selectImage(file, setBannerFile, setBannerPreview);
+    setCropTarget(null);
+    setPendingCropFile(null);
+  }
+
+  function handleCropCancel() {
+    setCropTarget(null);
+    setPendingCropFile(null);
   }
 
   function handleDiscard() {
@@ -151,47 +176,55 @@ export function CollegeProfile() {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => selectImage(e.target.files?.[0] ?? null, setBannerFile, setBannerPreview)}
+              onChange={(e) => pickImage("banner", e.target.files?.[0] ?? null)}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="absolute right-4 top-4 gap-2 shadow-sm"
-              onClick={() => bannerInputRef.current?.click()}
-            >
-              <Camera className="h-4 w-4" />
-              Edit Banner
-            </Button>
+            <div className="absolute right-4 top-4 flex flex-col items-end gap-1">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-2 shadow-sm"
+                onClick={() => bannerInputRef.current?.click()}
+              >
+                <Camera className="h-4 w-4" />
+                Edit Banner
+              </Button>
+              <span className="rounded bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm">
+                1600 × 500 px
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="relative -mt-16 shrink-0 sm:-mt-20">
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border-4 border-card bg-muted shadow-sm">
-                  {logoSrc ? (
-                    <img src={logoSrc} alt="College logo" className="h-full w-full object-cover" />
-                  ) : (
-                    <Building2 className="h-8 w-8 text-muted-foreground" />
-                  )}
+              <div className="-mt-16 shrink-0 sm:-mt-20">
+                <div className="relative">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border-4 border-card bg-muted shadow-sm">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt="College logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <Building2 className="h-8 w-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  <input
+                    ref={logoInputRef}
+                    id="logo"
+                    aria-label="Logo"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => pickImage("logo", e.target.files?.[0] ?? null)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    aria-label="Edit logo"
+                    className="absolute -bottom-1 -right-1 rounded-full bg-primary p-1.5 text-primary-foreground shadow hover:bg-primary/90"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <input
-                  ref={logoInputRef}
-                  id="logo"
-                  aria-label="Logo"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => selectImage(e.target.files?.[0] ?? null, setLogoFile, setLogoPreview)}
-                />
-                <button
-                  type="button"
-                  onClick={() => logoInputRef.current?.click()}
-                  aria-label="Edit logo"
-                  className="absolute -bottom-1 -right-1 rounded-full bg-primary p-1.5 text-primary-foreground shadow hover:bg-primary/90"
-                >
-                  <Camera className="h-3.5 w-3.5" />
-                </button>
+                <p className="mt-1 text-center text-[10px] leading-none text-muted-foreground">512 × 512 px</p>
               </div>
 
               <div className="min-w-0">
@@ -234,9 +267,22 @@ export function CollegeProfile() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Institution Full Name</Label>
+              <Label htmlFor="name">College Full Name</Label>
               <Input id="name" value={profile.name} readOnly className="bg-muted/40" />
               <p className="text-xs text-muted-foreground">Set when the college was created and can't be changed here.</p>
+            </div>
+            <div className="space-y-2">
+              {/* Reuses the existing tenant slug (already fetched by GET
+                  /colleges/me and already shown in the hero header above) --
+                  no new field or backend change, just a second, clearer
+                  presentation of the same identifier. Uppercased for
+                  display only; the underlying slug used for login and
+                  routing is untouched. */}
+              <Label htmlFor="shortName">College Short Name</Label>
+              <Input id="shortName" value={profile.slug.toUpperCase()} readOnly className="bg-muted/40 font-mono" />
+              <p className="text-xs text-muted-foreground">
+                Your college's unique ID (e.g. GMIT, BIET) — used to sign in and can't be changed here.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Institutional Description</Label>
@@ -275,6 +321,16 @@ export function CollegeProfile() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {message && <p className="text-sm text-success">{message}</p>}
       </form>
+
+      <ImageCropDialog
+        open={cropTarget !== null}
+        file={pendingCropFile}
+        aspect={cropTarget === "banner" ? 1600 / 500 : 1}
+        outputWidth={cropTarget === "banner" ? 1600 : 512}
+        outputHeight={cropTarget === "banner" ? 500 : 512}
+        onCancel={handleCropCancel}
+        onCropped={handleCropped}
+      />
     </div>
   );
 }

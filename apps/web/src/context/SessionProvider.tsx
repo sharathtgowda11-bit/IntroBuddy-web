@@ -42,6 +42,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const resolved = await fetchSession();
     setSession(resolved);
     setIsLoading(false);
+    return resolved;
   }, []);
 
   const logout = useCallback(() => {

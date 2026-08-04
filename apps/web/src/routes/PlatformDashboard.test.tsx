@@ -24,6 +24,7 @@ const colleges = [
     state: "Karnataka",
     totalStudents: 500,
     activeStudents: 120,
+    totalAlumni: 12,
   },
   {
     id: "college-2",
@@ -34,6 +35,7 @@ const colleges = [
     state: "Karnataka",
     totalStudents: 0,
     activeStudents: 0,
+    totalAlumni: 0,
   },
 ];
 
@@ -56,10 +58,13 @@ describe("PlatformDashboard", () => {
 
     expect(await screen.findByText("BIET")).toBeInTheDocument();
     expect(screen.getByText("GMIT")).toBeInTheDocument();
-    // Tiles: 2 total, 1 active, 1 provisioning.
+    // Tiles: 2 total, 1 active, 1 provisioning, 500 students, 12 alumni (summed across colleges).
     expect(screen.getByText("Total colleges onboarded").nextSibling?.textContent).toBe("2");
     expect(screen.getByText("Active colleges").nextSibling?.textContent).toBe("1");
     expect(screen.getByText("Colleges in provisioning").nextSibling?.textContent).toBe("1");
+    // { selector: "p" } disambiguates from the table's "Total students" column header.
+    expect(screen.getByText("Total students", { selector: "p" }).nextSibling?.textContent).toBe("500");
+    expect(screen.getByText("Total alumni", { selector: "p" }).nextSibling?.textContent).toBe("12");
     expect(apiGet).toHaveBeenCalledWith("/colleges");
   });
 

@@ -12,11 +12,13 @@ export {
   InvitationCreateSchema,
   ActivateRequestSchema,
   LoginRequestSchema,
+  AdminLoginRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetCompleteSchema,
   type InvitationCreateInput,
   type ActivateRequestInput,
   type LoginRequestInput,
+  type AdminLoginRequestInput,
   type PasswordResetRequestInput,
   type PasswordResetCompleteInput,
 } from "./schemas/auth.js";

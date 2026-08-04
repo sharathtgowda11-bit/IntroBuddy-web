@@ -1,5 +1,5 @@
 import { PERMISSIONS, type OpportunityCreateInput } from "@introbuddy/shared";
-import { Plus, UserRound } from "lucide-react";
+import { Briefcase, CheckCircle2, Clock, Plus, UserRound, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader.js";
@@ -42,6 +42,34 @@ interface ReceivedRequest {
   message: string;
   status: "pending" | "accepted" | "declined" | "expired" | "withdrawn";
   responseMessage: string | null;
+  createdAt: string;
+}
+
+interface SummaryTile {
+  label: string;
+  value: number;
+  icon: LucideIcon;
+  tint: string;
+}
+
+function SummaryTiles({ tiles }: { tiles: SummaryTile[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {tiles.map(({ label, value, icon: Icon, tint }) => (
+        <Card key={label}>
+          <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
+            <div className="space-y-1">
+              <CardDescription className="text-xs font-medium uppercase tracking-wide">{label}</CardDescription>
+              <CardTitle className="text-3xl">{value}</CardTitle>
+            </div>
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tint}`}>
+              <Icon className="h-5 w-5" />
+            </div>
+          </CardHeader>
+        </Card>
+      ))}
+    </div>
+  );
 }
 
 const emptyOpportunity: OpportunityCreateInput = {
@@ -64,8 +92,6 @@ export function AlumniDashboard() {
   const [showPostForm, setShowPostForm] = useState(false);
   const [newOpportunity, setNewOpportunity] = useState<OpportunityCreateInput>(emptyOpportunity);
   const [postError, setPostError] = useState<string | null>(null);
-  const [respondingId, setRespondingId] = useState<string | null>(null);
-  const [responseMessage, setResponseMessage] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
 
   async function loadAll() {
@@ -136,15 +162,17 @@ export function AlumniDashboard() {
     await loadAll();
   }
 
-  async function handleRespond(id: string, status: "accepted" | "declined") {
-    await apiPatch(`/requests/${id}/respond`, { status, responseMessage: responseMessage.trim() || undefined });
-    setRespondingId(null);
-    setResponseMessage("");
-    await loadAll();
-  }
-
   const pendingRequests = requests.filter((r) => r.status === "pending");
-  const pastRequests = requests.filter((r) => r.status !== "pending");
+  const acceptedRequests = requests.filter((r) => r.status === "accepted");
+  const activeOpportunities = opportunities.filter((op) => op.status === "open");
+  const recentRequests = requests.slice(0, 5);
+
+  const summaryTiles: SummaryTile[] = [
+    { label: "Pending requests", value: pendingRequests.length, icon: Clock, tint: "bg-brand-accent/10 text-brand-accent" },
+    { label: "Accepted requests", value: acceptedRequests.length, icon: CheckCircle2, tint: "bg-success/10 text-success" },
+    { label: "Total opportunities posted", value: opportunities.length, icon: Briefcase, tint: "bg-brand/10 text-brand" },
+    { label: "Active opportunities", value: activeOpportunities.length, icon: Briefcase, tint: "bg-brand/10 text-brand" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -161,6 +189,8 @@ export function AlumniDashboard() {
           to appear in the student directory and post opportunities.
         </div>
       )}
+
+      <SummaryTiles tiles={summaryTiles} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
@@ -309,65 +339,40 @@ export function AlumniDashboard() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Requests you've received</CardTitle>
-          <CardDescription>{pendingRequests.length} pending</CardDescription>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">Recent activity</CardTitle>
+            <CardDescription>Your most recent requests from students.</CardDescription>
+          </div>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/alumni/requests">View all requests</Link>
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {requests.length === 0 ? (
+        <CardContent className="space-y-2">
+          {recentRequests.length === 0 ? (
             <p className="text-sm text-muted-foreground">No requests yet.</p>
           ) : (
             <ul className="space-y-2">
-              {[...pendingRequests, ...pastRequests].map((req) => (
-                <li key={req.id} className="space-y-2 rounded-md border p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="font-medium">{req.studentName ?? req.studentEmail}</span>{" "}
-                      <span className="text-muted-foreground">
-                        — {req.type}
-                        {req.opportunityTitle ? ` (${req.opportunityTitle})` : ""}
-                      </span>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        req.status === "pending"
-                          ? "bg-brand-accent/10 text-brand-accent"
-                          : req.status === "accepted"
-                            ? "bg-success/10 text-success"
-                            : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {req.status}
+              {recentRequests.map((req) => (
+                <li key={req.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
+                  <div>
+                    <span className="font-medium">{req.studentName ?? req.studentEmail}</span>{" "}
+                    <span className="text-muted-foreground">
+                      — {req.type}
+                      {req.opportunityTitle ? ` (${req.opportunityTitle})` : ""}
                     </span>
                   </div>
-                  <p className="text-muted-foreground">{req.message}</p>
-                  {req.responseMessage && <p className="italic text-muted-foreground">Your reply: {req.responseMessage}</p>}
-
-                  {req.status === "pending" &&
-                    (respondingId === req.id ? (
-                      <div className="space-y-2">
-                        <Textarea
-                          value={responseMessage}
-                          onChange={(e) => setResponseMessage(e.target.value)}
-                          placeholder="Optional reply message"
-                        />
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => handleRespond(req.id, "accepted")}>
-                            Accept
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleRespond(req.id, "declined")}>
-                            Decline
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setRespondingId(null)}>
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button size="sm" variant="outline" onClick={() => setRespondingId(req.id)}>
-                        Respond
-                      </Button>
-                    ))}
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                      req.status === "pending"
+                        ? "bg-brand-accent/10 text-brand-accent"
+                        : req.status === "accepted"
+                          ? "bg-success/10 text-success"
+                          : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {req.status}
+                  </span>
                 </li>
               ))}
             </ul>

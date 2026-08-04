@@ -18,6 +18,7 @@ export interface AlumniDirectoryListItem {
   linkedinUrl: string | null;
   graduationYear: number | null;
   departmentName: string | null;
+  mentorshipAvailable: boolean;
 }
 
 interface AlumniDirectoryRow {
@@ -31,6 +32,7 @@ interface AlumniDirectoryRow {
   linkedin_url: string | null;
   graduation_year: number | null;
   department_name: string | null;
+  mentorship_available: boolean;
 }
 
 function mapRow(row: AlumniDirectoryRow): AlumniDirectoryListItem {
@@ -45,12 +47,13 @@ function mapRow(row: AlumniDirectoryRow): AlumniDirectoryListItem {
     linkedinUrl: row.linkedin_url,
     graduationYear: row.graduation_year,
     departmentName: row.department_name,
+    mentorshipAvailable: row.mentorship_available,
   };
 }
 
 const SELECT_COLUMNS = `
   cu.id, cu.name, ap.avatar_path, ap.company, ap.job_title, ap.city, ap.country,
-  ap.linkedin_url, cu.graduation_year, dept.name as department_name
+  ap.linkedin_url, cu.graduation_year, dept.name as department_name, ap.mentorship_available
 `;
 
 const FROM_CLAUSE = `

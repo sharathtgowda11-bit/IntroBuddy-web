@@ -33,6 +33,7 @@ interface AlumniDirectoryDetail {
   bio: string | null;
   graduationYear: number | null;
   departmentName: string | null;
+  mentorshipAvailable: boolean;
   opportunities: Opportunity[];
 }
 
@@ -97,9 +98,18 @@ export function AlumniDirectoryProfile() {
             </div>
           )}
           <div className="min-w-0 flex-1 space-y-2">
-            <p className="font-medium">
-              {alumnus.jobTitle ? `${alumnus.jobTitle}${alumnus.company ? ` at ${alumnus.company}` : ""}` : "—"}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">
+                {alumnus.jobTitle ? `${alumnus.jobTitle}${alumnus.company ? ` at ${alumnus.company}` : ""}` : "—"}
+              </p>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  alumnus.mentorshipAvailable ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {alumnus.mentorshipAvailable ? "Available for Mentorship" : "Not Available for Mentorship"}
+              </span>
+            </div>
             <p className="text-sm text-muted-foreground">{[alumnus.city, alumnus.country].filter(Boolean).join(", ") || "—"}</p>
             {alumnus.bio && <p className="text-sm text-muted-foreground">{alumnus.bio}</p>}
             {alumnus.linkedinUrl && (
@@ -137,8 +147,12 @@ export function AlumniDirectoryProfile() {
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : alumnus.mentorshipAvailable ? (
         <Button onClick={() => setActiveForm({ type: "mentorship" })}>Request mentorship</Button>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {alumnus.name ?? "This alumnus"} is not currently available for mentorship.
+        </p>
       )}
 
       <Card>
